@@ -127,11 +127,11 @@ const MOOD_TASK_PRIORITIES = {
 };
 
 const MOOD_CATEGORIES = {
-  happy: ['creative', 'social', 'learning'],
-  neutral: ['routine', 'organization', 'maintenance'],
-  tired: ['simple', 'quick', 'relaxing'],
-  stressed: ['mindful', 'self-care', 'planning'],
-  productive: ['important', 'challenging', 'focus'],
+  happy: ['creative', 'social', 'learning', 'enjoyable', 'expressive', 'collaborative', 'innovative', 'fulfilling', 'engaging', 'inspiring'],
+  neutral: ['routine', 'organization', 'maintenance', 'administrative', 'methodical', 'structured', 'systematic', 'practical', 'essential', 'standard'],
+  tired: ['simple', 'quick', 'relaxing', 'manageable', 'effortless', 'brief', 'straightforward', 'undemanding', 'low-effort', 'restful'],
+  stressed: ['mindful', 'self-care', 'planning', 'calming', 'organizing', 'preparing', 'reflecting', 'prioritizing', 'incremental', 'therapeutic'],
+  productive: ['important', 'challenging', 'focus', 'strategic', 'high-value', 'skill-building', 'analytical', 'complex', 'achievement', 'growth'],
 };
 
 const getPriorityStyle = (priority: string): ViewStyle => {
@@ -228,4 +228,4 @@ export default function MoodBasedTasks({
       </ScrollView>
     </View>
   );
-} 
+}

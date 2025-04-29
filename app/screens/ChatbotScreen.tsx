@@ -18,6 +18,10 @@ import { useTheme } from '../context/ThemeContext';
 import { generateResponse, generateResponseWithTasks, resetChatHistory } from '../services/geminiService';
 import { useTaskContext } from '../context/TaskContext';
 import { Timestamp } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
+import { AchievementManager } from '../services/AchievementManager';
 
 // Message types
 interface Message {
@@ -29,21 +33,156 @@ interface Message {
 
 // Sample welcome messages
 const welcomeMessages = [
-  "Hello! I'm TaskGenius AI, your personal productivity assistant.",
-  "I can now see your tasks and help you manage them more effectively. Ask me about your pending tasks or deadlines!",
-  "Try asking me to suggest a schedule for your tasks, help with prioritization, or productivity techniques tailored to your workload."
+  "Hello! I'm TaskGenius AI, your personal productivity assistant. I can now see your tasks and help you organize them into an effective schedule. Try asking me to create a schedule for your pending tasks based on their deadlines and priorities. I can also suggest the best time blocks for focused work and breaks throughout your day!",
 ];
 
 const ChatbotScreen = () => {
-  const { theme } = useTheme();
+  const { theme, currentThemeColors } = useTheme();
   const isDark = theme === 'dark';
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   
+  // Voice recording states
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [transcribedText, setTranscribedText] = useState('');
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  
   // Get tasks from the task context
   const { tasks, addTask } = useTaskContext();
+  
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      // Request permissions if we don't have them yet
+      if (hasPermission !== true) {
+        const { status } = await Audio.requestPermissionsAsync();
+        setHasPermission(status === 'granted');
+        
+        if (status !== 'granted') {
+          Alert.alert(
+            'Permission Required',
+            'Please grant microphone permissions to use voice commands'
+          );
+          return;
+        }
+      }
+      
+      setIsRecording(true);
+      
+      // Prepare the recorder
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false
+      });
+      
+      console.log('Starting recording...');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(recording);
+      
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      Alert.alert('Error', 'Failed to start voice recording');
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    
+    try {
+      setIsRecording(false);
+      setIsTranscribing(true);
+      
+      console.log('Stopping recording...');
+      await recording.stopAndUnloadAsync();
+      
+      // Get the recording URI
+      const uri = recording.getURI();
+      console.log('Recording stopped and stored at', uri);
+      
+      // In a real implementation, we would send this audio file to a speech-to-text service
+      // Since we don't have a working speech recognition service at the moment,
+      // we'll fall back to a manual input prompt
+      simulateSpeechToText();
+      
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      Alert.alert('Error', 'Failed to process voice recording');
+      setIsTranscribing(false);
+    } finally {
+      setRecording(null);
+    }
+  };
+  
+  // Simulate speech-to-text conversion with user input
+  const simulateSpeechToText = () => {
+    // Display a more clear message explaining what's happening
+    Alert.prompt(
+      'Voice Input',
+      'Please type what you just said into the microphone. This will be sent to the chatbot.',
+      [
+        {
+          text: 'Cancel',
+          onPress: () => {
+            setIsTranscribing(false);
+          },
+          style: 'cancel'
+        },
+        {
+          text: 'Send to Chatbot',
+          onPress: (text = '') => {
+            if (text.trim() !== '') {
+              setTranscribedText(text);
+              setIsTranscribing(false);
+              
+              // Update the voice command usage achievement
+              AchievementManager.updateVoiceCommandAchievement();
+              
+              // Process the command immediately
+              handleVoiceCommand(text);
+              
+              // Show a short toast or feedback that the message was sent
+              console.log('Voice input sent to chatbot:', text);
+            } else {
+              setIsTranscribing(false);
+              Alert.alert('Error', 'Please enter some text or try again.');
+            }
+          }
+        }
+      ],
+      'plain-text',
+      '' // Default input text
+    );
+  };
+
+  const handleVoiceCommand = (text: string) => {
+    // Create and add the user message
+    const userMessage: Message = {
+      id: `user-voice-${Date.now()}`,
+      text,
+      sender: 'user',
+      timestamp: new Date()
+    };
+    
+    setMessages(prevMessages => [...prevMessages, userMessage]);
+    
+    // Check if this is a task creation request
+    const isTaskCreation = handlePotentialTaskCreation(text);
+    
+    // Only send to Gemini if not a direct task creation
+    if (!isTaskCreation) {
+      sendMessageToGemini(text);
+    }
+  };
 
   // Initialize with welcome message
   useEffect(() => {
@@ -56,8 +195,38 @@ const ChatbotScreen = () => {
     
     setMessages(initialMessages);
     
-    // Reset chat history when component unmounts
+    // Request audio recording permissions
+    const getPermission = async () => {
+      console.log('Requesting microphone permissions');
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        console.log('Microphone permission status:', status);
+        setHasPermission(status === 'granted');
+        
+        if (status !== 'granted') {
+          Alert.alert(
+            'Microphone Permission Required',
+            'Voice commands need microphone access. Please grant permission in your device settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Request Again', 
+                onPress: () => getPermission() 
+              }
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Error requesting microphone permission:', error);
+      }
+    };
+    
+    // Run setup
+    getPermission();
+    
+    // Cleanup function
     return () => {
+      // Reset chat history
       resetChatHistory();
     };
   }, []);
@@ -164,7 +333,7 @@ const ChatbotScreen = () => {
       if (match && match[1]) {
         taskTitle = match[1].trim();
         
-        // Ask for confirmation before creating
+        // Ask for confirmation before redirecting to the task creation form
         Alert.alert(
           'Create Task',
           `Do you want to create a task: "${taskTitle}"?`,
@@ -175,7 +344,26 @@ const ChatbotScreen = () => {
             },
             {
               text: 'Create',
-              onPress: () => createTaskFromChat(taskTitle)
+              onPress: async () => {
+                // Store the task title in AsyncStorage so the form can use it
+                await AsyncStorage.setItem('chatbot_task_title', taskTitle);
+                
+                // Add a message indicating we're redirecting to the form
+                const redirectMessage: Message = {
+                  id: `system-${Date.now()}`,
+                  text: `Taking you to the task creation form to create "${taskTitle}"...`,
+                  sender: 'bot',
+                  timestamp: new Date()
+                };
+                
+                setMessages(prevMessages => [...prevMessages, redirectMessage]);
+                
+                // Short delay before navigation for better UX
+                setTimeout(() => {
+                  // Navigate to the task creation form
+                  router.push("/(app)/create-task");
+                }, 800);
+              }
             }
           ]
         );
@@ -221,21 +409,33 @@ const ChatbotScreen = () => {
     
     return (
       <View style={[
+
         styles.messageBubble,
-        isUserMessage ? styles.userBubble : styles.botBubble,
-        isDark && (isUserMessage ? styles.darkUserBubble : styles.darkBotBubble)
+        isUserMessage ? 
+          { backgroundColor: currentThemeColors.primary, borderBottomRightRadius: 4 } : 
+          { backgroundColor: currentThemeColors.buttonSecondary, borderBottomLeftRadius: 4 },
+        { alignSelf: isUserMessage ? 'flex-end' : 'flex-start' }
       ]}>
         <Text style={[
+
           styles.messageText,
-          isUserMessage ? styles.userText : styles.botText,
-          isDark && styles.darkText
+          { 
+            color: isUserMessage ? 
+              (isDark ? currentThemeColors.background : '#000000') : 
+              // Changed the task description text color to be more visible
+              isDark ? '#E0E0E0' : currentThemeColors.text 
+          }
         ]}>
           {message.text}
         </Text>
         <Text style={[
+
           styles.timestamp,
-          isUserMessage ? styles.userTimestamp : styles.botTimestamp,
-          isDark && styles.darkTimestamp
+          { 
+            color: isUserMessage ? 
+              (isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)') : 
+              currentThemeColors.secondary 
+          }
         ]}>
           {message.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
         </Text>
@@ -248,16 +448,14 @@ const ChatbotScreen = () => {
     if (!isLoading) return null;
     
     return (
-      <View style={[
-        styles.loadingContainer,
-        isDark && styles.darkLoadingContainer
-      ]}>
+      <View style={styles.loadingContainer}>
         <View style={[
+
           styles.loadingIndicator,
-          isDark && styles.darkLoadingIndicator
+          { backgroundColor: currentThemeColors.buttonSecondary }
         ]}>
-          <ActivityIndicator size="small" color={isDark ? "#64B5F6" : "#2196F3"} />
-          <Text style={[styles.loadingText, isDark && styles.darkLoadingText]}>Thinking...</Text>
+          <ActivityIndicator size="small" color={currentThemeColors.primary} />
+          <Text style={[styles.loadingText, { color: currentThemeColors.text }]}>Thinking...</Text>
         </View>
       </View>
     );
@@ -265,18 +463,25 @@ const ChatbotScreen = () => {
 
   return (
     <KeyboardAvoidingView 
-      style={[styles.container, isDark && styles.darkContainer]} 
+      style={[styles.container, { backgroundColor: currentThemeColors.background }]} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <View style={[styles.header, isDark && styles.darkHeader]}>
+      <View style={[
+
+        styles.header, 
+        { 
+          backgroundColor: currentThemeColors.background,
+          borderBottomColor: currentThemeColors.border 
+        }
+      ]}>
         <TouchableOpacity
           onPress={handleBackPress}
-          style={[styles.backButton, isDark && styles.darkButton]}
+          style={[styles.backButton, { backgroundColor: currentThemeColors.buttonSecondary }]}
         >
-          <MaterialIcons name="arrow-back" size={24} color={isDark ? '#fff' : '#333'} />
+          <MaterialIcons name="arrow-back" size={24} color={currentThemeColors.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, isDark && styles.darkText]}>TaskGenius AI</Text>
+        <Text style={[styles.headerTitle, { color: currentThemeColors.primary }]}>TaskGenius AI</Text>
         <View style={styles.headerRight} />
       </View>
 
@@ -292,15 +497,36 @@ const ChatbotScreen = () => {
         {renderLoading()}
       </ScrollView>
 
-      <View style={[styles.poweredByContainer, isDark && styles.darkPoweredByContainer]}>
-        <Text style={[styles.poweredByText, isDark && styles.darkPoweredByText]}>
+      <View style={[
+
+        styles.poweredByContainer, 
+        { 
+          backgroundColor: currentThemeColors.buttonSecondary,
+          borderTopColor: currentThemeColors.border 
+        }
+      ]}>
+        <Text style={[styles.poweredByText, { color: currentThemeColors.secondary }]}>
           Powered by Google Gemini
         </Text>
       </View>
 
-      <View style={[styles.inputContainer, isDark && styles.darkInputContainer]}>
+      <View style={[
+
+        styles.inputContainer, 
+        { 
+          backgroundColor: currentThemeColors.background,
+          borderTopColor: currentThemeColors.border 
+        }
+      ]}>
         <TextInput
-          style={[styles.input, isDark && styles.darkInput]}
+          style={[
+
+            styles.input, 
+            { 
+              backgroundColor: currentThemeColors.buttonSecondary,
+              color: currentThemeColors.text 
+            }
+          ]}
           placeholder="Type a message..."
           placeholderTextColor={isDark ? "#888" : "#999"}
           value={inputText}
@@ -310,25 +536,61 @@ const ChatbotScreen = () => {
           returnKeyType="send"
           blurOnSubmit={false}
         />
+        
+        {/* Voice Recording Button */}
         <TouchableOpacity 
-          style={[styles.sendButton, inputText.trim() === '' && styles.disabledSendButton]} 
+          style={[
+
+            styles.voiceButton,
+            isRecording ? { backgroundColor: currentThemeColors.error } : { backgroundColor: currentThemeColors.buttonSecondary }
+          ]}
+          onPress={() => {
+            if (!isRecording) {
+              startRecording();
+            } else {
+              stopRecording();
+            }
+          }}
+          disabled={isTranscribing}
+        >
+          {isTranscribing ? (
+            <ActivityIndicator size="small" color={currentThemeColors.text} />
+          ) : (
+            <MaterialIcons
+              name={isRecording ? "mic" : "mic-none"}
+              size={24}
+              color={isRecording ? "#FFFFFF" : currentThemeColors.primary}
+            />
+          )}
+        </TouchableOpacity>
+        
+        {/* Send Button */}
+        <TouchableOpacity 
+          style={styles.sendButton} 
           onPress={handleSendMessage}
           disabled={inputText.trim() === ''}
         >
           <MaterialIcons
             name="send"
             size={24}
-            color={inputText.trim() === '' ? (isDark ? '#555' : '#ccc') : (isDark ? '#64B5F6' : '#2196F3')}
+            color={inputText.trim() === '' ? currentThemeColors.buttonSecondary : currentThemeColors.primary}
           />
         </TouchableOpacity>
       </View>
 
       {/* Suggested questions */}
-      <View style={[styles.suggestionsContainer, isDark && styles.darkSuggestionsContainer]}>
-        <Text style={[styles.suggestionsTitle, isDark && styles.darkText]}>Try asking:</Text>
+      <View style={[
+
+        styles.suggestionsContainer, 
+        { 
+          backgroundColor: currentThemeColors.background,
+          borderTopColor: currentThemeColors.border 
+        }
+      ]}>
+        <Text style={[styles.suggestionsTitle, { color: currentThemeColors.text }]}>Try asking:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll}>
           <TouchableOpacity 
-            style={[styles.suggestionChip, isDark && styles.darkSuggestionChip]}
+            style={[styles.suggestionChip, { backgroundColor: currentThemeColors.buttonSecondary }]}
             onPress={() => {
               const text = "What tasks should I focus on today?";
               setInputText(text);
@@ -345,13 +607,13 @@ const ChatbotScreen = () => {
               sendMessageToGemini(text);
             }}
           >
-            <Text style={[styles.suggestionText, isDark && styles.darkSuggestionText]}>
+            <Text style={[styles.suggestionText, { color: currentThemeColors.primary }]}>
               What tasks should I focus on today?
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.suggestionChip, isDark && styles.darkSuggestionChip]}
+            style={[styles.suggestionChip, { backgroundColor: currentThemeColors.buttonSecondary }]}
             onPress={() => {
               const text = "Suggest a schedule for my pending tasks";
               setInputText(text);
@@ -368,13 +630,13 @@ const ChatbotScreen = () => {
               sendMessageToGemini(text);
             }}
           >
-            <Text style={[styles.suggestionText, isDark && styles.darkSuggestionText]}>
+            <Text style={[styles.suggestionText, { color: currentThemeColors.primary }]}>
               Suggest a schedule for my pending tasks
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.suggestionChip, isDark && styles.darkSuggestionChip]}
+            style={[styles.suggestionChip, { backgroundColor: currentThemeColors.buttonSecondary }]}
             onPress={() => {
               const text = "Help me prioritize my tasks";
               setInputText(text);
@@ -391,13 +653,13 @@ const ChatbotScreen = () => {
               sendMessageToGemini(text);
             }}
           >
-            <Text style={[styles.suggestionText, isDark && styles.darkSuggestionText]}>
+            <Text style={[styles.suggestionText, { color: currentThemeColors.primary }]}>
               Help me prioritize my tasks
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.suggestionChip, isDark && styles.darkSuggestionChip]}
+            style={[styles.suggestionChip, { backgroundColor: currentThemeColors.buttonSecondary }]}
             onPress={() => {
               const text = "How can I be more productive?";
               setInputText(text);
@@ -414,13 +676,13 @@ const ChatbotScreen = () => {
               sendMessageToGemini(text);
             }}
           >
-            <Text style={[styles.suggestionText, isDark && styles.darkSuggestionText]}>
+            <Text style={[styles.suggestionText, { color: currentThemeColors.primary }]}>
               How can I be more productive?
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.suggestionChip, isDark && styles.darkSuggestionChip]}
+            style={[styles.suggestionChip, { backgroundColor: currentThemeColors.buttonSecondary }]}
             onPress={() => {
               const text = "Create a task called Check emails";
               setInputText(text);
@@ -438,7 +700,7 @@ const ChatbotScreen = () => {
               handlePotentialTaskCreation(text);
             }}
           >
-            <Text style={[styles.suggestionText, isDark && styles.darkSuggestionText]}>
+            <Text style={[styles.suggestionText, { color: currentThemeColors.primary }]}>
               Create a task
             </Text>
           </TouchableOpacity>
@@ -451,40 +713,22 @@ const ChatbotScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F6F8',
-  },
-  darkContainer: {
-    backgroundColor: '#121212',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     elevation: 2,
-  },
-  darkHeader: {
-    backgroundColor: '#1E1E1E',
-    borderBottomColor: '#333',
   },
   backButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-  },
-  darkButton: {
-    backgroundColor: '#333',
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
-  },
-  darkText: {
-    color: '#fff',
   },
   headerRight: {
     width: 40,
@@ -509,45 +753,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     minHeight: 42,
   },
-  userBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#2196F3',
-    borderBottomRightRadius: 4,
-  },
-  darkUserBubble: {
-    backgroundColor: '#1976D2',
-  },
-  botBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#F0F0F0',
-    borderBottomLeftRadius: 4,
-  },
-  darkBotBubble: {
-    backgroundColor: '#2C2C2C',
-  },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
-  },
-  userText: {
-    color: '#fff',
-  },
-  botText: {
-    color: '#333',
   },
   timestamp: {
     fontSize: 10,
     marginTop: 4,
     alignSelf: 'flex-end',
-  },
-  userTimestamp: {
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  botTimestamp: {
-    color: 'rgba(0, 0, 0, 0.5)',
-  },
-  darkTimestamp: {
-    color: 'rgba(255, 255, 255, 0.5)',
   },
   
   // Loading indicator
@@ -555,27 +768,16 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
-  darkLoadingContainer: {
-    backgroundColor: 'transparent',
-  },
   loadingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F0F0',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
   },
-  darkLoadingIndicator: {
-    backgroundColor: '#2C2C2C',
-  },
   loadingText: {
     marginLeft: 8,
     fontSize: 14,
-    color: '#666',
-  },
-  darkLoadingText: {
-    color: '#ccc',
   },
   
   // Input container
@@ -584,27 +786,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  darkInputContainer: {
-    backgroundColor: '#1E1E1E',
-    borderTopColor: '#333',
   },
   input: {
     flex: 1,
-    backgroundColor: '#F5F6F8',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     maxHeight: 120,
     fontSize: 16,
   },
-  darkInput: {
-    backgroundColor: '#333',
-    color: '#fff',
-    borderColor: '#444',
+  voiceButton: {
+    marginLeft: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sendButton: {
     marginLeft: 12,
@@ -614,43 +812,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  disabledSendButton: {
-    opacity: 0.6,
-  },
   poweredByContainer: {
     paddingVertical: 4,
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  darkPoweredByContainer: {
-    backgroundColor: '#1A1A1A',
-    borderTopColor: '#333',
   },
   poweredByText: {
     fontSize: 12,
-    color: '#777',
     fontStyle: 'italic',
-  },
-  darkPoweredByText: {
-    color: '#888',
   },
   
   // Suggestions
   suggestionsContainer: {
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    backgroundColor: '#fff',
-  },
-  darkSuggestionsContainer: {
-    backgroundColor: '#1E1E1E',
-    borderTopColor: '#333',
   },
   suggestionsTitle: {
     fontSize: 12,
-    color: '#666',
     marginBottom: 8,
     fontWeight: '500',
   },
@@ -659,23 +837,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   suggestionChip: {
-    backgroundColor: '#F0F0F0',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,
     marginRight: 8,
     marginBottom: 4,
   },
-  darkSuggestionChip: {
-    backgroundColor: '#333',
-  },
   suggestionText: {
     fontSize: 14,
-    color: '#2196F3',
-  },
-  darkSuggestionText: {
-    color: '#64B5F6',
   },
 });
 
-export default ChatbotScreen; 
+export default ChatbotScreen;

@@ -25,7 +25,6 @@ import Achievements from '../../components/Achievements';
 import { AchievementManager } from '../services/AchievementManager';
 import MoodBasedTasks from '../../components/MoodBasedTasks';
 import RecurringTaskForm from '@/components/RecurringTaskForm';
-import VoiceCommandButton from '@/components/VoiceCommandButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MoodBasedSuggestions from '@/components/MoodBasedSuggestions';
 import MoodCheckup from '@/components/MoodCheckup';
@@ -48,7 +47,7 @@ const TASK_STATUS = {
 };
 
 const HomeScreen = () => {
-  const { theme } = useTheme();
+  const { theme, currentThemeColors } = useTheme();
   const isDark = theme === 'dark';
   const { width: windowWidth } = useWindowDimensions();
   const isSmallScreen = windowWidth < 375;
@@ -75,7 +74,6 @@ const HomeScreen = () => {
   const [userPoints, setUserPoints] = useState(0);
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [moodSelectionCount, setMoodSelectionCount] = useState(0);
   const [showMoodCheckup, setShowMoodCheckup] = useState(false);
@@ -378,13 +376,6 @@ const HomeScreen = () => {
     setSelectedTaskId(taskId);
   };
 
-  const handleVoiceCommand = (taskData: Partial<Task>) => {
-    // Handle voice command
-    console.log('Voice command task:', taskData);
-    // Update voice command achievement
-    updateVoiceCommandAchievement();
-  };
-
   const handleMoodSelect = (mood: string) => {
     setCurrentMood(mood);
     setShowMoodCheckup(false);
@@ -400,12 +391,6 @@ const HomeScreen = () => {
     
     // Use the AchievementManager to update Pomodoro achievements
     AchievementManager.updatePomodoroAchievement(sessions);
-  };
-
-  // Use the AchievementManager's implementation instead
-  const updateVoiceCommandAchievement = async () => {
-    // Use the AchievementManager to update voice command achievements
-    AchievementManager.updateVoiceCommandAchievement();
   };
 
   // Update achievement tracking based on completed tasks
@@ -592,13 +577,13 @@ const HomeScreen = () => {
       item.priority === 'high' && styles.highPriorityTask,
       item.priority === 'medium' && styles.mediumPriorityTask,
       item.priority === 'low' && styles.lowPriorityTask,
-      isDark && styles.darkTaskItem
+      { backgroundColor: currentThemeColors.background }
     ]}>
       <View style={styles.taskHeader}>
         <Text style={[
           styles.taskTitle,
           item.completed && styles.completedTaskTitle,
-          isDark && styles.darkText
+          { color: currentThemeColors.primary }
         ]}>
           {item.title}
         </Text>
@@ -607,32 +592,32 @@ const HomeScreen = () => {
             <MaterialIcons
               name={item.completed ? "check-circle" : "radio-button-unchecked"}
               size={24}
-              color={isDark ? (item.completed ? "#4CAF50" : "#666") : (item.completed ? "#4CAF50" : "#333")}
+              color={item.completed ? currentThemeColors.success : currentThemeColors.primary}
             />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
-            <MaterialIcons name="delete" size={24} color={isDark ? "#666" : "#333"} />
+            <MaterialIcons name="delete" size={24} color={currentThemeColors.primary} />
           </TouchableOpacity>
         </View>
       </View>
       {item.description ? (
-        <Text style={[styles.taskDescription, isDark && styles.darkText]}>
+        <Text style={[styles.taskDescription, { color: currentThemeColors.text }]}>
           {item.description}
         </Text>
       ) : null}
       <View style={styles.taskFooter}>
-        <View style={[styles.taskMeta, isDark && styles.darkTaskMeta]}>
-          <MaterialIcons name="event" size={16} color={isDark ? "#666" : "#333"} />
-          <Text style={[styles.taskMetaText, isDark && styles.darkText]}>
+        <View style={[styles.taskMeta, { backgroundColor: currentThemeColors.background }]}>
+          <MaterialIcons name="event" size={16} color={currentThemeColors.primary} />
+          <Text style={[styles.taskMetaText, { color: currentThemeColors.text }]}>
             {item.dueDate ? item.dueDate.toLocaleDateString() : 'No deadline'}
           </Text>
         </View>
-        <View style={[styles.taskStatus, isDark && styles.darkTaskStatus]}>
+        <View style={[styles.taskStatus, { backgroundColor: currentThemeColors.background }]}>
           <View style={[
             styles.statusIndicator,
-            { backgroundColor: item.completed ? "#4CAF50" : "#FFC107" }
+            { backgroundColor: item.completed ? currentThemeColors.success : currentThemeColors.warning }
           ]} />
-          <Text style={[styles.statusText, isDark && styles.darkText]}>
+          <Text style={[styles.statusText, { color: currentThemeColors.text }]}>
             {item.completed ? "Completed" : "In Progress"}
           </Text>
         </View>
@@ -640,7 +625,7 @@ const HomeScreen = () => {
     </View>
   );
 
-  const renderAnalytics = (isDark: boolean) => {
+  const renderAnalytics = () => {
     // Get current date and calculate date ranges
     const now = new Date();
     const startOfWeek = new Date(now);
@@ -657,31 +642,15 @@ const HomeScreen = () => {
 
     // Calculate completion rates
     const weeklyCompletionRate = weeklyTasks.length > 0 
-      ? (weeklyTasks.filter(task => task.completed).length / weeklyTasks.length) * 100 
+      ? Math.round((weeklyTasks.filter(task => task.completed).length / weeklyTasks.length) * 100)
       : 0;
     const monthlyCompletionRate = monthlyTasks.length > 0 
-      ? (monthlyTasks.filter(task => task.completed).length / monthlyTasks.length) * 100 
+      ? Math.round((monthlyTasks.filter(task => task.completed).length / monthlyTasks.length) * 100)
       : 0;
 
     // Use windowWidth from component scope (instead of calling useWindowDimensions hook again)
     const chartWidth = Math.min(windowWidth - 40, 600);
     const shouldAdjustFontSize = windowWidth < 360;
-
-    // Group tasks by category
-    const categoryData = tasks.reduce((acc: { [key: string]: number }, task) => {
-      acc[task.category ?? 'other'] = (acc[task.category ?? 'other'] || 0) + 1;
-      return acc;
-    }, {});
-
-    // Prepare chart data
-    const categoryChartData = {
-      labels: Object.keys(categoryData).map(label => 
-        shouldAdjustFontSize && label.length > 6 ? label.substring(0, 6) + '...' : label
-      ),
-      datasets: [{
-        data: Object.values(categoryData) as number[]
-      }]
-    };
 
     // Calculate tasks by priority
     const priorityData = tasks.reduce((acc: { [key: string]: number }, task) => {
@@ -689,111 +658,253 @@ const HomeScreen = () => {
       return acc;
     }, {});
 
-    const priorityChartData = {
-      labels: Object.keys(priorityData),
-      datasets: [{
-        data: Object.values(priorityData) as number[]
-      }]
+    // For displaying human-readable labels
+    const priorityLabels: { [key: string]: string } = {
+      'low': 'Low',
+      'medium': 'Medium',
+      'high': 'High'
     };
 
+    // Calculate tasks by status
+    const statusData = tasks.reduce((acc: { [key: string]: number }, task) => {
+      const status = task.completed ? 'completed' : (task.status || 'pending');
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    // For displaying human-readable labels
+    const statusLabels: { [key: string]: string } = {
+      'pending': 'Pending',
+      'in_progress': 'In Progress',
+      'completed': 'Completed'
+    };
+
+    // Set up chart config that respects the current theme
+    const chartConfig = {
+      backgroundColor: currentThemeColors.background,
+      backgroundGradientFrom: currentThemeColors.background,
+      backgroundGradientTo: currentThemeColors.background,
+      decimalPlaces: 0,
+      color: (opacity = 1) => isDark 
+        ? `rgba(255, 255, 255, ${opacity})` 
+        : `rgba(0, 0, 0, ${opacity})`,
+      labelColor: (opacity = 1) => isDark 
+        ? `rgba(255, 255, 255, ${opacity})` 
+        : `rgba(0, 0, 0, ${opacity})`,
+      style: {
+        borderRadius: 16,
+      },
+      propsForDots: {
+        r: '6',
+        strokeWidth: '2',
+        stroke: currentThemeColors.background,
+      },
+    };
+
+    // Define colors based on theme
+    const priorityColors = {
+      high: isDark ? 'rgba(244, 67, 54, 0.8)' : 'rgba(244, 67, 54, 1)',
+      medium: isDark ? 'rgba(255, 193, 7, 0.8)' : 'rgba(255, 193, 7, 1)',
+      low: isDark ? 'rgba(76, 175, 80, 0.8)' : 'rgba(76, 175, 80, 1)'
+    };
+
+    const statusColors = {
+      completed: isDark ? 'rgba(76, 175, 80, 0.8)' : 'rgba(76, 175, 80, 1)',
+      in_progress: isDark ? 'rgba(255, 193, 7, 0.8)' : 'rgba(255, 193, 7, 1)', 
+      pending: isDark ? 'rgba(150, 150, 150, 0.8)' : 'rgba(117, 117, 117, 1)'
+    };
+
+    if (tasksLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={currentThemeColors.primary} />
+        </View>
+      );
+    }
+
+    if (tasks.length === 0) {
+      return (
+        <View style={styles.emptyTasksContainer}>
+          <Text style={[styles.emptyTasksText, { color: currentThemeColors.text }]}>
+            No tasks found. Create tasks to view analytics.
+          </Text>
+        </View>
+      );
+    }
+
     return (
-      <ScrollView 
-        style={[styles.analyticsContainer, isDark && styles.darkAnalyticsContainer]}
-        contentContainerStyle={{ alignItems: 'center' }}
-      >
+      <View style={{ flex: 1, backgroundColor: currentThemeColors.background }}>
         <RealtimeUpdateIndicator isDark={isDark} />
-        <View style={[styles.statsContainer, { width: '100%', maxWidth: 800 }]}>
-          <View style={[styles.statCard, isDark && styles.darkStatCard]}>
-            <Text style={[styles.statNumber, isDark && styles.darkStatNumber]}>{tasks.length}</Text>
-            <Text style={[styles.statLabel, isDark && styles.darkText]}>Total Tasks</Text>
-          </View>
-          <View style={[styles.statCard, isDark && styles.darkStatCard]}>
-            <Text style={[styles.statNumber, isDark && styles.darkStatNumber]}>
-              {tasks.filter(task => task.completed).length}
+        
+        {/* Overall Task Statistics */}
+        <Text style={[styles.chartTitle, { color: currentThemeColors.primary, marginTop: 16 }]}>
+          Task Statistics
+        </Text>
+        <View style={styles.statsContainer}>
+          <View style={[styles.statCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.statNumber, { color: currentThemeColors.primary }]}>
+              {tasks.length}
             </Text>
-            <Text style={[styles.statLabel, isDark && styles.darkText]}>Completed</Text>
-          </View>
-          <View style={[styles.statCard, isDark && styles.darkStatCard]}>
-            <Text style={[styles.statNumber, isDark && styles.darkStatNumber]}>
-              {tasks.filter(task => !task.completed).length}
+            <Text style={[styles.statLabel, { color: currentThemeColors.text }]}>
+              Total Tasks
             </Text>
-            <Text style={[styles.statLabel, isDark && styles.darkText]}>In Progress</Text>
+          </View>
+
+          <View style={[styles.statCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.statNumber, { color: currentThemeColors.primary }]}>
+              {tasks.filter(t => t.completed).length}
+            </Text>
+            <Text style={[styles.statLabel, { color: currentThemeColors.text }]}>
+              Completed
+            </Text>
+          </View>
+
+          <View style={[styles.statCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.statNumber, { color: currentThemeColors.success }]}>
+              {Math.round((tasks.filter(t => t.completed).length / (tasks.length || 1)) * 100)}%
+            </Text>
+            <Text style={[styles.statLabel, { color: currentThemeColors.text }]}>
+              Completion Rate
+            </Text>
           </View>
         </View>
 
-        <View style={[styles.periodStatsContainer, { width: '100%', maxWidth: 800 }]}>
-          <View style={[styles.periodCard, isDark && styles.darkPeriodCard]}>
-            <Text style={[styles.periodTitle, isDark && styles.darkText]}>This Week</Text>
-            <Text style={[styles.periodNumber, isDark && styles.darkStatNumber]}>{weeklyTasks.length}</Text>
-            <Text style={[styles.periodLabel, isDark && styles.darkText]}>Tasks</Text>
-            <View style={[styles.progressBar, isDark && styles.darkProgressBar]}>
-              <View style={[styles.progressFill, { width: `${weeklyCompletionRate}%` }]} />
+        {/* Period Stats */}
+        <Text style={[styles.chartTitle, { color: currentThemeColors.primary }]}>
+          Time Period Analysis
+        </Text>
+        <View style={styles.periodStatsContainer}>
+          <View style={[styles.periodCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.periodTitle, { color: currentThemeColors.primary }]}>This Week</Text>
+            <Text style={[styles.periodNumber, { color: currentThemeColors.primary }]}>
+              {weeklyTasks.length}
+            </Text>
+            <Text style={[styles.periodLabel, { color: currentThemeColors.text }]}>Tasks</Text>
+            <View style={[styles.progressBar, { backgroundColor: isDark ? 'rgba(100, 100, 100, 0.3)' : '#f0f0f0' }]}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    backgroundColor: currentThemeColors.success,
+                    width: `${weeklyCompletionRate}%` 
+                  }
+                ]} 
+              />
             </View>
-            <Text style={[styles.completionRate, isDark && styles.darkText]}>{weeklyCompletionRate.toFixed(1)}% Complete</Text>
+            <Text style={[styles.completionRate, { color: currentThemeColors.text }]}>
+              {weeklyCompletionRate}% Complete
+            </Text>
           </View>
-          <View style={[styles.periodCard, isDark && styles.darkPeriodCard]}>
-            <Text style={[styles.periodTitle, isDark && styles.darkText]}>This Month</Text>
-            <Text style={[styles.periodNumber, isDark && styles.darkStatNumber]}>{monthlyTasks.length}</Text>
-            <Text style={[styles.periodLabel, isDark && styles.darkText]}>Tasks</Text>
-            <View style={[styles.progressBar, isDark && styles.darkProgressBar]}>
-              <View style={[styles.progressFill, { width: `${monthlyCompletionRate}%` }]} />
+
+          <View style={[styles.periodCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.periodTitle, { color: currentThemeColors.primary }]}>This Month</Text>
+            <Text style={[styles.periodNumber, { color: currentThemeColors.primary }]}>
+              {monthlyTasks.length}
+            </Text>
+            <Text style={[styles.periodLabel, { color: currentThemeColors.text }]}>Tasks</Text>
+            <View style={[styles.progressBar, { backgroundColor: isDark ? 'rgba(100, 100, 100, 0.3)' : '#f0f0f0' }]}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    backgroundColor: currentThemeColors.success,
+                    width: `${monthlyCompletionRate}%` 
+                  }
+                ]} 
+              />
             </View>
-            <Text style={[styles.completionRate, isDark && styles.darkText]}>{monthlyCompletionRate.toFixed(1)}% Complete</Text>
+            <Text style={[styles.completionRate, { color: currentThemeColors.text }]}>
+              {monthlyCompletionRate}% Complete
+            </Text>
           </View>
         </View>
 
-        <View style={[styles.chartContainer, isDark && styles.darkChartContainer, { width: '100%', maxWidth: 800 }]}>
-          <Text style={[styles.chartTitle, isDark && styles.darkText]}>Tasks by Category</Text>
-          <BarChart
-            data={categoryChartData}
-            width={chartWidth}
-            height={220}
-            yAxisLabel=""
-            yAxisSuffix=" tasks"
-            chartConfig={{
-              backgroundColor: isDark ? '#1E1E1E' : '#ffffff',
-              backgroundGradientFrom: isDark ? '#1E1E1E' : '#ffffff',
-              backgroundGradientTo: isDark ? '#1E1E1E' : '#ffffff',
-              decimalPlaces: 0,
-              color: (opacity = 1) => isDark ? `rgba(255, 255, 255, ${opacity})` : `rgba(33, 150, 243, ${opacity})`,
-              labelColor: (opacity = 1) => isDark ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`,
-              style: {
-                borderRadius: 16
-              },
-              barPercentage: 0.8,
-              propsForLabels: {
-                fontSize: shouldAdjustFontSize ? 10 : 12,
-              }
-            }}
-            style={styles.chart}
-          />
-        </View>
+        {/* Tasks by Priority Chart */}
+        {Object.keys(priorityData).length > 0 && (
+          <View style={[styles.chartContainer, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.chartTitle, { color: currentThemeColors.primary }]}>
+              Tasks by Priority
+            </Text>
+            <PieChart
+              data={[
+                {
+                  name: priorityLabels['high'] || 'High',
+                  population: priorityData['high'] || 0,
+                  color: priorityColors.high,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                },
+                {
+                  name: priorityLabels['medium'] || 'Medium',
+                  population: priorityData['medium'] || 0,
+                  color: priorityColors.medium,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                },
+                {
+                  name: priorityLabels['low'] || 'Low',
+                  population: priorityData['low'] || 0,
+                  color: priorityColors.low,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                }
+              ].filter(item => item.population > 0)}
+              width={chartWidth}
+              height={220}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft={shouldAdjustFontSize ? "15" : "0"}
+              center={[10, 0]}
+              absolute
+              style={styles.chart}
+            />
+          </View>
+        )}
 
-        <View style={[styles.chartContainer, isDark && styles.darkChartContainer, { width: '100%', maxWidth: 800 }]}>
-          <Text style={[styles.chartTitle, isDark && styles.darkText]}>Tasks by Priority</Text>
-          <PieChart
-            data={Object.entries(priorityData).map(([priority, count]) => ({
-              name: priority.charAt(0).toUpperCase() + priority.slice(1),
-              count,
-              color: priority === 'high' ? '#FF6B6B' : 
-                     priority === 'medium' ? '#FFD93D' : '#6BCB77',
-              legendFontColor: isDark ? '#fff' : '#7F7F7F',
-              legendFontSize: shouldAdjustFontSize ? 10 : 12,
-            }))}
-            width={chartWidth}
-            height={220}
-            chartConfig={{
-              color: (opacity = 1) => isDark ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`,
-              labelColor: (opacity = 1) => isDark ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity})`,
-            }}
-            accessor="count"
-            backgroundColor="transparent"
-            paddingLeft="15"
-            absolute
-            style={styles.chart}
-          />
-        </View>
-      </ScrollView>
+        {/* Tasks by Status Chart */}
+        {Object.keys(statusData).length > 0 && (
+          <View style={[styles.chartContainer, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+            <Text style={[styles.chartTitle, { color: currentThemeColors.primary }]}>
+              Tasks by Status
+            </Text>
+            <PieChart
+              data={[
+                {
+                  name: statusLabels['completed'] || 'Completed',
+                  population: statusData['completed'] || 0,
+                  color: statusColors.completed,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                },
+                {
+                  name: statusLabels['in_progress'] || 'In Progress',
+                  population: statusData['in_progress'] || 0,
+                  color: statusColors.in_progress,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                },
+                {
+                  name: statusLabels['pending'] || 'Pending',
+                  population: statusData['pending'] || 0,
+                  color: statusColors.pending,
+                  legendFontColor: currentThemeColors.text,
+                  legendFontSize: 12
+                }
+              ].filter(item => item.population > 0)}
+              width={chartWidth}
+              height={220}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft={shouldAdjustFontSize ? "15" : "0"}
+              center={[10, 0]}
+              absolute
+              style={styles.chart}
+            />
+          </View>
+        )}
+      </View>
     );
   };
 
@@ -801,28 +912,17 @@ const HomeScreen = () => {
     if (loading) {
       return (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2196F3" />
+          <ActivityIndicator size="large" color={currentThemeColors.primary} />
         </View>
       );
     }
 
-    console.log('Rendering achievements section:', 
-      JSON.stringify({
-        achievementsCount: achievements.length,
-        userPoints: userPoints,
-        firstThreeAchievements: achievements.slice(0, 3).map(a => a.title)
-      })
-    );
-
-    // Add a button to manually initialize achievements if the array is empty
     if (!achievements || achievements.length === 0) {
       return (
         <View style={styles.noAchievementsContainer}>
-          <Text style={[styles.noAchievementsText, isDark && styles.darkText]}>
-            No achievements found. You may need to initialize your achievements.
-          </Text>
+          <Text style={[styles.noAchievementsText, { color: currentThemeColors.text }]}>No achievements found. You may need to initialize your achievements.</Text>
           <TouchableOpacity
-            style={styles.initButton}
+            style={[styles.initButton, { backgroundColor: currentThemeColors.success }]}
             onPress={async () => {
               const userId = auth.currentUser?.uid;
               if (userId) {
@@ -831,143 +931,182 @@ const HomeScreen = () => {
               }
             }}
           >
-            <Text style={styles.initButtonText}>Initialize Achievements</Text>
+            <Text style={[styles.initButtonText, { color: currentThemeColors.background }]}>Initialize Achievements</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
+    // Return the Achievements component directly without wrapping it in a ScrollView
     return (
-      <>
-        <Achievements 
-          achievements={achievements} 
+      <View style={{flex: 1}}>
+        <RealtimeUpdateIndicator isDark={isDark} />
+        <Achievements
+          achievements={achievements}
           userPoints={userPoints}
           onClaimReward={handleClaimAchievement}
           tasks={tasks}
           isDark={isDark}
+          onRefresh={async () => {
+            try {
+              // First, get all current tasks to evaluate achievement progress
+              console.log("Refreshing achievements data...");
+              
+              // Update all achievements based on tasks
+              await AchievementManager.handleUpdateAchievements(tasks);
+              
+              // Get fresh achievements data
+              const result = await AchievementManager.fetchAchievements();
+              if (result) {
+                setAchievements(result.achievements);
+                setUserPoints(result.userPoints);
+                console.log(`Refreshed achievements data: ${result.achievements.length} achievements, ${result.userPoints} points`);
+              }
+            } catch (error) {
+              console.error("Error in refresh:", error);
+            }
+          }}
         />
-      </>
+      </View>
     );
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color={currentThemeColors.primary} />
       </View>
     );
   }
 
+  const today = new Date();
+  const todayTasks = filteredTasks.filter(task => {
+    if (!task.dueDate) return false;
+    const taskDate = new Date(task.dueDate);
+    return (
+      taskDate.getDate() === today.getDate() &&
+      taskDate.getMonth() === today.getMonth() &&
+      taskDate.getFullYear() === today.getFullYear()
+    );
+  });
+
   return (
-    <View style={[styles.container, isDark && styles.darkContainer]}>
-      <View style={[styles.header, isDark && styles.darkHeader]}>
-        <Text style={[styles.headerTitle, isDark && styles.darkText]}>Task Manager</Text>
+    <View style={[styles.container, { backgroundColor: currentThemeColors.background }]}>
+      <View style={[styles.header, { 
+        backgroundColor: currentThemeColors.background,
+        borderBottomColor: currentThemeColors.border
+      }]}>
+        <Text style={[styles.headerTitle, { color: currentThemeColors.primary }]}>Task Manager</Text>
         <View style={styles.headerButtons}>
           <TouchableOpacity
-            style={[styles.headerButton, isDark && styles.darkHeaderButton]}
-            onPress={() => router.push("/store")}
+            style={[styles.headerButton, { backgroundColor: currentThemeColors.primary }]}
+            onPress={() => router.push("/(app)/store")}
           >
-            <MaterialIcons name="store" size={24} color={isDark ? '#fff' : '#000'} />
+            <MaterialIcons name="store" size={24} color={currentThemeColors.background} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.headerButton, isDark && styles.darkHeaderButton]}
-            onPress={() => router.push("/settings")}
+            style={[styles.headerButton, { backgroundColor: currentThemeColors.primary }]}
+            onPress={() => router.push("/(app)/settings")}
           >
-            <MaterialIcons name="settings" size={24} color={isDark ? '#fff' : '#000'} />
+            <MaterialIcons name="settings" size={24} color={currentThemeColors.background} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={[styles.content, isDark && styles.darkContent]} contentContainerStyle={[styles.contentContainer, isDark && styles.darkContent]}>
-        <RealtimeUpdateIndicator isDark={isDark} />
-        
-        <MoodBasedSuggestions
-          tasks={tasks}
-          currentMood={currentMood}
-          onSelectTask={handleTaskSelect}
-          onOpenMoodCheckup={() => setShowMoodCheckup(true)}
-          isDark={isDark}
-        />
+      <View style={[styles.content, { flex: 1, backgroundColor: currentThemeColors.background }]}>
+        <View style={{ height: '50%' }}>
+          <ScrollView 
+            style={{ flex: 1, backgroundColor: currentThemeColors.background }} 
+            contentContainerStyle={{ padding: 16 }}
+          >
+            <RealtimeUpdateIndicator isDark={isDark} />
+            
+            <MoodBasedSuggestions
+              tasks={tasks}
+              currentMood={currentMood}
+              onSelectTask={handleTaskSelect}
+              onOpenMoodCheckup={() => setShowMoodCheckup(true)}
+              isDark={isDark}
+            />
 
-        {/* Quick Actions */}
-        <View style={[styles.quickActionsCard, isDark && styles.darkCard]}>
-          <View style={[styles.quickActionsGrid, isSmallScreen && styles.quickActionsGridSmall]}>
-            <TouchableOpacity
-              style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}
-              onPress={() => router.push('/create-task')}
-            >
-              <View style={[styles.actionIcon, isDark && styles.darkActionIcon, { backgroundColor: isDark ? '#1E1E1E' : '#E8F5E9' }]}>
-                <MaterialIcons name="add" size={isSmallScreen ? 20 : 24} color={isDark ? '#4CAF50' : '#4CAF50'} />
-              </View>
-              <Text style={[styles.actionButtonText, isDark && styles.darkText, isSmallScreen && styles.actionButtonTextSmall]}>New Task</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}
-              onPress={() => router.push('/create-recurring-task')}
-            >
-              <View style={[styles.actionIcon, isDark && styles.darkActionIcon, { backgroundColor: isDark ? '#1E1E1E' : '#E3F2FD' }]}>
-                <MaterialIcons name="repeat" size={isSmallScreen ? 20 : 24} color={isDark ? '#2196F3' : '#2196F3'} />
-              </View>
-              <Text style={[styles.actionButtonText, isDark && styles.darkText, isSmallScreen && styles.actionButtonTextSmall]}>Recurring Task</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}
-              onPress={() => router.push('/schedule')}
-            >
-              <View style={[styles.actionIcon, isDark && styles.darkActionIcon, { backgroundColor: isDark ? '#1E1E1E' : '#F3E5F5' }]}>
-                <MaterialIcons name="event" size={isSmallScreen ? 20 : 24} color={isDark ? '#9C27B0' : '#9C27B0'} />
-              </View>
-              <Text style={[styles.actionButtonText, isDark && styles.darkText, isSmallScreen && styles.actionButtonTextSmall]}>Schedule</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}
-              onPress={() => router.push('/chatbot')}
-            >
-              <View style={[styles.actionIcon, isDark && styles.darkActionIcon, { backgroundColor: isDark ? '#1E1E1E' : '#FFF3E0' }]}>
-                <MaterialIcons name="chat" size={isSmallScreen ? 20 : 24} color={isDark ? '#FF9800' : '#FF9800'} />
-              </View>
-              <Text style={[styles.actionButtonText, isDark && styles.darkText, isSmallScreen && styles.actionButtonTextSmall]}>Chatbot</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}
-              onPress={() => router.push('/pomodoro')}
-            >
-              <View style={[styles.actionIcon, isDark && styles.darkActionIcon, { backgroundColor: isDark ? '#1E1E1E' : '#F3E5F5' }]}>
-                <MaterialIcons name="timer" size={isSmallScreen ? 20 : 24} color={isDark ? '#9C27B0' : '#9C27B0'} />
-                {pomodoroSessions > 0 && (
-                  <View style={styles.sessionBadge}>
-                    <Text style={styles.sessionBadgeText}>{pomodoroSessions}</Text>
+            {/* Quick Actions */}
+            <View style={[styles.quickActionsCard, { backgroundColor: currentThemeColors.background }]}>
+              <View style={[styles.quickActionsGrid, isSmallScreen && styles.quickActionsGridSmall]}>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: currentThemeColors.primary }]}
+                  onPress={() => router.push("/(app)/create-task")}>
+                  <View style={[styles.actionIcon, { backgroundColor: currentThemeColors.success }]}>
+                    <MaterialIcons name="add" size={isSmallScreen ? 20 : 24} color={currentThemeColors.background} />
                   </View>
-                )}
+                  <Text style={[styles.actionButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>New Task</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: currentThemeColors.primary }]}
+                  onPress={() => router.push("/(app)/create-recurring-task")}>
+                  <View style={[styles.actionIcon, { backgroundColor: currentThemeColors.primary }]}>
+                    <MaterialIcons name="repeat" size={isSmallScreen ? 20 : 24} color={currentThemeColors.background} />
+                  </View>
+                  <Text style={[styles.actionButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Recurring Task</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: currentThemeColors.primary }]}
+                  onPress={() => router.push("/(app)/schedule")}>
+                  <View style={[styles.actionIcon, { backgroundColor: currentThemeColors.warning }]}>
+                    <MaterialIcons name="event" size={isSmallScreen ? 20 : 24} color={currentThemeColors.background} />
+                  </View>
+                  <Text style={[styles.actionButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Schedule</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: currentThemeColors.primary }]}
+                  onPress={() => router.push("/(app)/chatbot")}>
+                  <View style={[styles.actionIcon, { backgroundColor: currentThemeColors.error }]}>
+                    <MaterialIcons name="chat" size={isSmallScreen ? 20 : 24} color={currentThemeColors.background} />
+                  </View>
+                  <Text style={[styles.actionButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Chatbot</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: currentThemeColors.primary }]}
+                  onPress={() => router.push("/(app)/pomodoro")}>
+                  <View style={[styles.actionIcon, { backgroundColor: currentThemeColors.primary }]}>
+                    <MaterialIcons name="timer" size={isSmallScreen ? 20 : 24} color={currentThemeColors.background} />
+                    {pomodoroSessions > 0 && (
+                      <View style={styles.sessionBadge}>
+                        <Text style={styles.sessionBadgeText}>{pomodoroSessions}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.actionButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Pomodoro</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={[styles.actionButtonText, isDark && styles.darkText, isSmallScreen && styles.actionButtonTextSmall]}>Pomodoro</Text>
-            </TouchableOpacity>
-            <View style={[styles.actionButton, isDark && styles.darkActionButton, isSmallScreen && styles.actionButtonSmall]}>
-              <VoiceCommandButton onTaskCreated={handleVoiceCommand} isDark={isDark} />
             </View>
-          </View>
+          </ScrollView>
         </View>
 
-        {/* Main Content Tabs */}
-        <View style={[styles.mainContent, isDark && styles.darkCard]}>
-          <View style={[styles.tabButtons, isDark && styles.darkTabButtons]}>
+        {/* Bottom half: Tabbed content */}
+        <View style={[styles.mainContent, { 
+          height: '50%',
+          backgroundColor: currentThemeColors.background,
+          borderColor: currentThemeColors.border,
+          borderWidth: 1,
+          borderBottomWidth: 0
+        }]}>
+          <View style={[styles.tabButtons, { backgroundColor: currentThemeColors.background }]}>
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'tasks' && [styles.activeTabButton, isDark && { backgroundColor: '#333' }]
+                activeTab === 'tasks' && [styles.activeTabButton, { backgroundColor: currentThemeColors.success }]
               ]}
               onPress={() => setActiveTab('tasks')}
             >
               <MaterialIcons 
                 name="list" 
                 size={isSmallScreen ? 20 : 24} 
-                color={activeTab === 'tasks' ? '#4CAF50' : (isDark ? '#666' : '#666')} 
+                color={activeTab === 'tasks' ? currentThemeColors.background : currentThemeColors.primary} 
               />
               <Text style={[
                 styles.tabButtonText, 
-                activeTab === 'tasks' && styles.activeTabButtonText,
-                isDark && styles.darkText,
-                isSmallScreen && styles.tabButtonTextSmall
+                activeTab === 'tasks' && { color: currentThemeColors.background },
+                { color: isDark ? currentThemeColors.primary : '#000000' }
               ]}>
                 Tasks
               </Text>
@@ -975,20 +1114,19 @@ const HomeScreen = () => {
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'analytics' && [styles.activeTabButton, isDark && { backgroundColor: '#333' }]
+                activeTab === 'analytics' && [styles.activeTabButton, { backgroundColor: currentThemeColors.success }]
               ]}
               onPress={() => setActiveTab('analytics')}
             >
               <MaterialIcons 
                 name="analytics" 
                 size={isSmallScreen ? 20 : 24} 
-                color={activeTab === 'analytics' ? '#4CAF50' : (isDark ? '#666' : '#666')} 
+                color={activeTab === 'analytics' ? currentThemeColors.background : currentThemeColors.primary} 
               />
               <Text style={[
                 styles.tabButtonText, 
-                activeTab === 'analytics' && styles.activeTabButtonText,
-                isDark && styles.darkText,
-                isSmallScreen && styles.tabButtonTextSmall
+                activeTab === 'analytics' && { color: currentThemeColors.background },
+                { color: isDark ? currentThemeColors.primary : '#000000' }
               ]}>
                 Analytics
               </Text>
@@ -996,110 +1134,160 @@ const HomeScreen = () => {
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'achievements' && [styles.activeTabButton, isDark && { backgroundColor: '#333' }]
+                activeTab === 'achievements' && [styles.activeTabButton, { backgroundColor: currentThemeColors.success }]
               ]}
               onPress={() => setActiveTab('achievements')}
             >
-              <MaterialIcons 
-                name="emoji-events" 
-                size={isSmallScreen ? 20 : 24} 
-                color={activeTab === 'achievements' ? '#4CAF50' : (isDark ? '#666' : '#666')} 
-              />
-              <Text style={[
-                styles.tabButtonText, 
-                activeTab === 'achievements' && styles.activeTabButtonText,
-                isDark && styles.darkText,
-                isSmallScreen && styles.tabButtonTextSmall
-              ]}>
-                Achievements
-              </Text>
+              <View style={styles.tabButtonContent}>
+                <MaterialIcons 
+                  name="emoji-events" 
+                  size={isSmallScreen ? 20 : 24} 
+                  color={activeTab === 'achievements' ? currentThemeColors.background : currentThemeColors.primary} 
+                />
+                <Text style={[
+                  styles.tabButtonText, 
+                  activeTab === 'achievements' && { color: currentThemeColors.background },
+                  { color: isDark ? currentThemeColors.primary : '#000000' }
+                ]}>
+                  Achievements
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.tabContent}>
+          <View style={[styles.tabContent, { flex: 1 }]}>
             {activeTab === 'tasks' && (
-              <>
-                <TaskFilters
-                  onSearch={setSearchQuery}
-                  onSort={setSortKey}
-                  onFilter={handleStatusFilterChange}
-                  isDark={isDark}
-                />
-                <View style={styles.filterContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterButton,
-                      isDark && styles.darkFilterButton,
-                      statusFilterValue === 'all' && styles.filterButtonActive
-                    ]}
-                    onPress={() => handleStatusFilterChange('all')}
-                  >
+              <ScrollView 
+                contentContainerStyle={{ padding: 16 }}
+                nestedScrollEnabled={true}
+                style={{ flex: 1 }}
+              >
+                <View style={[
+                  styles.searchFiltersContainer, 
+                  { 
+                    backgroundColor: currentThemeColors.buttonSecondary,
+                    borderWidth: 0,
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 12
+                  }
+                ]}>
+                  <TaskFilters
+                    onSearch={setSearchQuery}
+                    onSort={setSortKey}
+                    onFilter={handleStatusFilterChange}
+                    isDark={isDark}
+                    currentThemeColors={currentThemeColors}
+                  />
+                  <View style={[
+                    styles.statusFilterContainer,
+                    {
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTopWidth: 1,
+                      borderTopColor: currentThemeColors.border
+                    }
+                  ]}>
                     <Text style={[
-                      styles.filterButtonText,
-                      isDark && styles.darkText,
-                      statusFilterValue === 'all' && styles.filterButtonTextActive
-                    ]}>All</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterButton,
-                      isDark && styles.darkFilterButton,
-                      statusFilterValue === 'pending' && styles.filterButtonActive
-                    ]}
-                    onPress={() => handleStatusFilterChange('pending')}
-                  >
-                    <Text style={[
-                      styles.filterButtonText,
-                      isDark && styles.darkText,
-                      statusFilterValue === 'pending' && styles.filterButtonTextActive
-                    ]}>Active</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterButton,
-                      isDark && styles.darkFilterButton,
-                      statusFilterValue === 'completed' && styles.filterButtonActive
-                    ]}
-                    onPress={() => handleStatusFilterChange('completed')}
-                  >
-                    <Text style={[
-                      styles.filterButtonText,
-                      isDark && styles.darkText,
-                      statusFilterValue === 'completed' && styles.filterButtonTextActive
-                    ]}>Completed</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.taskListContainer}>
-                  {tasksLoading ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#2196F3" />
+                      styles.filterLabel,
+                      { color: currentThemeColors.secondary, marginBottom: 8 }
+                    ]}>
+                      Status:
+                    </Text>
+                    <View style={[
+                      styles.filterContainer
+                    ]}>
+                      <TouchableOpacity
+                        style={[
+                          styles.filterButton,
+                          { 
+                            backgroundColor: statusFilterValue === 'all' 
+                              ? currentThemeColors.success 
+                              : currentThemeColors.primary
+                          }
+                        ]}
+                        onPress={() => handleStatusFilterChange('all')}
+                      >
+                        <Text style={[
+                          styles.filterButtonText,
+                          { color: currentThemeColors.background }
+                        ]}>All</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.filterButton,
+                          { 
+                            backgroundColor: statusFilterValue === 'pending' 
+                              ? currentThemeColors.success 
+                              : currentThemeColors.primary
+                          }
+                        ]}
+                        onPress={() => handleStatusFilterChange('pending')}
+                      >
+                        <Text style={[
+                          styles.filterButtonText,
+                          { color: currentThemeColors.background }
+                        ]}>Active</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.filterButton,
+                          { 
+                            backgroundColor: statusFilterValue === 'completed' 
+                              ? currentThemeColors.success 
+                              : currentThemeColors.primary
+                          }
+                        ]}
+                        onPress={() => handleStatusFilterChange('completed')}
+                      >
+                        <Text style={[
+                          styles.filterButtonText,
+                          { color: currentThemeColors.background }
+                        ]}>Completed</Text>
+                      </TouchableOpacity>
                     </View>
-                  ) : filteredTasks.length === 0 ? (
-                    <View style={styles.emptyTasksContainer}>
-                      <Text style={[styles.emptyTasksText, isDark && styles.darkText]}>
-                        No tasks found. Create a new task to get started!
-                      </Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={filteredTasks}
-                      renderItem={renderTaskItem}
-                      keyExtractor={(item) => item.id}
-                      contentContainerStyle={styles.taskList}
-                      nestedScrollEnabled
-                      scrollEnabled={false}
-                    />
-                  )}
+                  </View>
                 </View>
-              </>
+                
+                {tasksLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={currentThemeColors.primary} />
+                  </View>
+                ) : todayTasks.length === 0 ? (
+                  <View style={styles.emptyTasksContainer}>
+                    <Text style={[styles.emptyTasksText, { color: currentThemeColors.text }]}>
+                      No tasks found. Create a new task to get started!
+                    </Text>
+                  </View>
+                ) : (
+                  <View>
+                    {todayTasks.map(item => (
+                      <React.Fragment key={item.id}>
+                        {renderTaskItem({ item })}
+                      </React.Fragment>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
             )}
 
-            {activeTab === 'analytics' && renderAnalytics(isDark)}
+            {activeTab === 'analytics' && (
+              <ScrollView 
+                contentContainerStyle={{ padding: 16 }}
+                nestedScrollEnabled={true}
+              >
+                {renderAnalytics()}
+              </ScrollView>
+            )}
 
-            {activeTab === 'achievements' && renderAchievementsSection()}
+            {activeTab === 'achievements' && (
+              <View style={{ flex: 1 }}>
+                {renderAchievementsSection()}
+              </View>
+            )}
           </View>
         </View>
-      </ScrollView>
+      </View>
 
       {showRecurringForm && (
         <RecurringTaskForm
@@ -1121,29 +1309,18 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F6F8',
-  },
-  darkContainer: {
-    backgroundColor: '#121212',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     elevation: 2,
-  },
-  darkHeader: {
-    backgroundColor: '#1E1E1E',
-    borderBottomColor: '#333',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -1152,34 +1329,18 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-  },
-  darkHeaderButton: {
-    backgroundColor: '#2C2C2C',
-  },
-  darkButton: {
-    backgroundColor: '#333',
   },
   content: {
     flex: 1,
-    backgroundColor: '#F5F6F8',
   },
   contentContainer: {
     padding: 16,
     paddingBottom: 32,
-    backgroundColor: '#F5F6F8',
-  },
-  darkContent: {
-    backgroundColor: '#121212',
-  },
-  darkText: {
-    color: '#fff',
   },
   taskListContainer: {
     minHeight: 200,
   },
   quickActionsCard: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -1188,9 +1349,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-  },
-  darkCard: {
-    backgroundColor: '#1E1E1E',
   },
   quickActionsGrid: {
     flexDirection: 'row',
@@ -1211,12 +1369,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
   },
-  darkActionButton: {
-    backgroundColor: '#1E1E1E',
-  },
-  actionButtonSmall: {
-    width: '45%',
-  },
   actionIcon: {
     width: 48,
     height: 48,
@@ -1230,22 +1382,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  darkActionIcon: {
-    backgroundColor: '#1E1E1E',
-    elevation: 0,
-    shadowColor: 'transparent',
-  },
   actionButtonText: {
     fontSize: 14,
-    color: '#333',
     fontWeight: '500',
     textAlign: 'center',
   },
-  actionButtonTextSmall: {
-    fontSize: 12,
-  },
   mainContent: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
     elevation: 2,
@@ -1257,14 +1399,8 @@ const styles = StyleSheet.create({
   },
   tabButtons: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     padding: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  darkTabButtons: {
-    backgroundColor: '#1E1E1E',
-    borderBottomColor: '#333',
   },
   tabButton: {
     flex: 1,
@@ -1274,25 +1410,18 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
   },
-  activeTabButton: {
-    backgroundColor: '#E8F5E9',
-  },
+  activeTabButton: {},
   tabButtonText: {
     marginLeft: 8,
     fontSize: 14,
-    color: '#666',
     fontWeight: '500',
-  },
-  tabButtonTextSmall: {
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  activeTabButtonText: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
   },
   tabContent: {
     flex: 1,
+  },
+  tabButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   taskList: {
     padding: 16,
@@ -1307,9 +1436,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  darkAnalyticsContainer: {
-    backgroundColor: '#121212',
-  },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1319,34 +1445,20 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: 100,
-    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 8,
     marginHorizontal: 4,
     marginBottom: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
     alignItems: 'center',
-  },
-  darkStatCard: {
-    backgroundColor: '#1E1E1E',
-    shadowColor: 'transparent',
-    elevation: 0,
   },
   statNumber: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  darkStatNumber: {
-    color: '#64B5F6',
   },
   statLabel: {
     fontSize: 14,
-    color: '#666',
     marginTop: 4,
   },
   periodStatsContainer: {
@@ -1358,81 +1470,53 @@ const styles = StyleSheet.create({
   periodCard: {
     flex: 1,
     minWidth: 150,
-    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 8,
     marginHorizontal: 4,
     marginBottom: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
     alignItems: 'center',
-  },
-  darkPeriodCard: {
-    backgroundColor: '#1E1E1E',
-    shadowColor: 'transparent',
-    elevation: 0,
   },
   periodTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 8,
   },
   periodNumber: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2196F3',
   },
   periodLabel: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 8,
   },
   progressBar: {
     width: '100%',
     height: 6,
-    backgroundColor: '#E0E0E0',
     borderRadius: 3,
     marginVertical: 8,
     overflow: 'hidden',
   },
-  darkProgressBar: {
-    backgroundColor: '#333',
-  },
   progressFill: {
     height: '100%',
-    backgroundColor: '#4CAF50',
     borderRadius: 3,
   },
   completionRate: {
     fontSize: 12,
-    color: '#666',
     marginTop: 4,
   },
   chartContainer: {
-    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
     marginBottom: 16,
     alignItems: 'center',
-  },
-  darkChartContainer: {
-    backgroundColor: '#1E1E1E',
-    shadowColor: 'transparent',
-    elevation: 0,
   },
   chartTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 16,
     alignSelf: 'flex-start',
   },
@@ -1445,14 +1529,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     right: 10,
-    backgroundColor: '#4CAF50',
     borderRadius: 12,
     padding: 2,
   },
   sessionBadgeText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#fff',
   },
   noAchievementsContainer: {
     flex: 1,
@@ -1461,22 +1543,18 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   noAchievementsText: {
-    color: '#666',
     marginBottom: 16,
   },
   initButton: {
     padding: 12,
     borderRadius: 4,
-    backgroundColor: '#4CAF50',
     alignItems: 'center',
   },
   initButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
   taskItem: {
-    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
@@ -1487,21 +1565,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     borderLeftWidth: 4,
   },
-  darkTaskItem: {
-    backgroundColor: '#1E1E1E',
-    shadowColor: 'transparent',
-    elevation: 0,
-  },
   highPriorityTask: {
-    borderLeftColor: '#f44336',
     borderLeftWidth: 4,
   },
   mediumPriorityTask: {
-    borderLeftColor: '#ff9800',
     borderLeftWidth: 4,
   },
   lowPriorityTask: {
-    borderLeftColor: '#4caf50',
     borderLeftWidth: 4,
   },
   taskHeader: {
@@ -1513,7 +1583,6 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
     flex: 1,
     marginRight: 16,
     lineHeight: 22,
@@ -1524,7 +1593,6 @@ const styles = StyleSheet.create({
   },
   taskDescription: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -1536,30 +1604,21 @@ const styles = StyleSheet.create({
   taskMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
   },
-  darkTaskMeta: {
-    backgroundColor: '#333',
-  },
   taskMetaText: {
     marginLeft: 4,
     fontSize: 12,
-    color: '#666',
     lineHeight: 16,
   },
   taskStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-  },
-  darkTaskStatus: {
-    backgroundColor: '#333',
   },
   statusIndicator: {
     width: 8,
@@ -1569,7 +1628,6 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    color: '#666',
     textTransform: 'capitalize',
   },
   datePickerButton: {
@@ -1577,27 +1635,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    backgroundColor: '#f9f9f9',
   },
   datePickerText: {
     fontSize: 16,
-    color: '#333',
   },
   completedTaskTitle: {
     textDecorationLine: 'line-through',
-    color: '#888',
   },
-  completedTaskText: {
-    color: '#888',
-  },
+  completedTaskText: {},
   pomodoroModal: {
     width: '90%',
     maxWidth: 500,
-    backgroundColor: '#fff',
     borderRadius: 15,
     padding: 20,
   },
@@ -1613,22 +1664,18 @@ const styles = StyleSheet.create({
   pomodoroStats: {
     marginTop: 20,
     padding: 15,
-    backgroundColor: '#f5f5f5',
     borderRadius: 10,
   },
   pomodoroStatsText: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 5,
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: '#fff',
     padding: 24,
     borderRadius: 8,
     width: '80%',
@@ -1641,7 +1688,6 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 4,
     padding: 8,
     marginBottom: 12,
@@ -1663,46 +1709,29 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     alignItems: 'center',
   },
-  lowPriority: {
-    backgroundColor: '#e8f5e9',
-  },
-  mediumPriority: {
-    backgroundColor: '#fff3e0',
-  },
-  highPriority: {
-    backgroundColor: '#ffebee',
-  },
+  lowPriority: {},
+  mediumPriority: {},
+  highPriority: {},
   priorityButtonText: {
     fontSize: 14,
     fontWeight: 'bold',
   },
-  lowPriorityText: {
-    color: '#4caf50',
-  },
-  mediumPriorityText: {
-    color: '#ff9800',
-  },
-  highPriorityText: {
-    color: '#f44336',
-  },
+  lowPriorityText: {},
+  mediumPriorityText: {},
+  highPriorityText: {},
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 24,
   },
-  cancelButton: {
-    backgroundColor: '#f44336',
-  },
-  saveButton: {
-    backgroundColor: '#4CAF50',
-  },
+  cancelButton: {},
+  saveButton: {},
   modalButton: {
     padding: 12,
     borderRadius: 4,
     alignItems: 'center',
   },
   modalButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -1719,22 +1748,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
     alignItems: 'center',
-  },
-  darkFilterButton: {
-    backgroundColor: '#2C2C2C',
-  },
-  filterButtonActive: {
-    backgroundColor: '#007AFF',
   },
   filterButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#666',
-  },
-  filterButtonTextActive: {
-    color: '#fff',
   },
   emptyTasksContainer: {
     padding: 32,
@@ -1743,8 +1761,18 @@ const styles = StyleSheet.create({
   },
   emptyTasksText: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
+  },
+  // Added missing styles
+  searchFiltersContainer: {
+    marginBottom: 16,
+  },
+  statusFilterContainer: {
+    flexDirection: 'column',
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

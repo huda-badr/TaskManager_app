@@ -16,7 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 
 const PomodoroScreen = () => {
-  const { theme } = useTheme();
+  const { theme, currentThemeColors } = useTheme();
   const isDark = theme === 'dark';
   const [timeLeft, setTimeLeft] = useState<number>(25 * 60);
   const [isActive, setIsActive] = useState(false);
@@ -31,7 +31,6 @@ const PomodoroScreen = () => {
     sessionsUntilLongBreak: 4,
   });
 
-  // Load data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       const initializeScreen = async () => {
@@ -45,7 +44,6 @@ const PomodoroScreen = () => {
       initializeScreen();
 
       return () => {
-        // Cleanup when screen loses focus
         setIsActive(false);
       };
     }, [isInitialized])
@@ -53,7 +51,7 @@ const PomodoroScreen = () => {
 
   useEffect(() => {
     let interval: NodeJS.Timeout | undefined;
-    
+
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft((prevTime) => {
@@ -132,8 +130,8 @@ const PomodoroScreen = () => {
       setIsActive(false);
       Alert.alert(
         isBreak ? 'Break Complete!' : 'Work Session Complete!',
-        isBreak 
-          ? 'Ready to focus again?' 
+        isBreak
+          ? 'Ready to focus again?'
           : `Great job! Take a ${isLongBreak ? 'long ' : ''}break and stay productive!`,
         [
           {
@@ -142,8 +140,8 @@ const PomodoroScreen = () => {
               setIsBreak(!isBreak);
               const duration = isBreak ? settings.workDuration * 60 : nextBreakTime * 60;
               setTimeLeft(isNaN(duration) ? 25 * 60 : duration);
-            }
-          }
+            },
+          },
         ]
       );
     } catch (error) {
@@ -182,7 +180,7 @@ const PomodoroScreen = () => {
         [
           {
             text: 'Cancel',
-            style: 'cancel'
+            style: 'cancel',
           },
           {
             text: 'Leave',
@@ -190,8 +188,8 @@ const PomodoroScreen = () => {
             onPress: () => {
               setIsActive(false);
               router.replace('/');
-            }
-          }
+            },
+          },
         ]
       );
     } else {
@@ -200,159 +198,252 @@ const PomodoroScreen = () => {
   };
 
   return (
-    <View style={[styles.container, isDark && styles.darkContainer]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? '#121212' : '#fff'} />
-      
-      <View style={[styles.header, isDark && styles.darkHeader]}>
+    <View style={[styles.container, { backgroundColor: currentThemeColors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={currentThemeColors.background} />
+
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: currentThemeColors.background,
+            borderBottomColor: currentThemeColors.border,
+          },
+        ]}
+      >
         <TouchableOpacity
           onPress={handleBackPress}
-          style={[styles.backButton, isDark && styles.darkButton]}
+          style={[styles.backButton, { backgroundColor: currentThemeColors.buttonSecondary }]}
         >
-          <MaterialIcons name="arrow-back" size={24} color={isDark ? '#fff' : '#333'} />
+          <MaterialIcons name="arrow-back" size={24} color={currentThemeColors.primary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, isDark && styles.darkText]}>Pomodoro Timer</Text>
+        <Text style={[styles.headerTitle, { color: currentThemeColors.primary }]}>Pomodoro Timer</Text>
         <TouchableOpacity
           onPress={() => setShowSettings(true)}
-          style={[styles.settingsButton, isDark && styles.darkButton]}
+          style={[styles.settingsButton, { backgroundColor: currentThemeColors.buttonSecondary }]}
         >
-          <MaterialIcons name="settings" size={24} color={isDark ? '#fff' : '#333'} />
+          <MaterialIcons name="settings" size={24} color={currentThemeColors.primary} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={[styles.content, isDark && styles.darkContent]}>
-        <View style={[styles.timerContainer, isDark && styles.darkTimerContainer]}>
-          <Text style={[styles.timerText, isDark && styles.darkText]}>
-            {formatTime(timeLeft)}
-          </Text>
-          <Text style={[styles.timerLabel, isDark && styles.darkText]}>
+      <ScrollView style={[styles.content, { backgroundColor: currentThemeColors.background }]}>
+        <View
+          style={[
+            styles.timerContainer,
+            {
+              backgroundColor: currentThemeColors.background,
+              borderColor: currentThemeColors.border,
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text style={[styles.timerText, { color: currentThemeColors.text }]}>{formatTime(timeLeft)}</Text>
+          <Text style={[styles.timerLabel, { color: currentThemeColors.secondary }]}>
             {isBreak ? 'Break Time' : 'Work Time'}
           </Text>
         </View>
 
-        <View style={[styles.controls, isDark && styles.darkControls]}>
+        <View style={styles.controls}>
           <TouchableOpacity
-            style={[styles.controlButton, isDark && styles.darkControlButton]}
+            style={[styles.controlButton, { backgroundColor: currentThemeColors.primary }]}
             onPress={toggleTimer}
           >
             <MaterialIcons
               name={isActive ? 'pause' : 'play-arrow'}
               size={32}
-              color={isDark ? '#fff' : '#333'}
+              color={isDark ? currentThemeColors.background : '#000000'}
             />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.controlButton, isDark && styles.darkControlButton]}
+            style={[styles.controlButton, { backgroundColor: currentThemeColors.primary }]}
             onPress={resetTimer}
           >
-            <MaterialIcons name="refresh" size={32} color={isDark ? '#fff' : '#333'} />
+            <MaterialIcons
+              name="refresh"
+              size={32}
+              color={isDark ? currentThemeColors.background : '#000000'}
+            />
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.statsContainer, isDark && styles.darkStatsContainer]}>
-          <Text style={[styles.statsTitle, isDark && styles.darkText]}>Today's Progress</Text>
-          <View style={[styles.statsGrid, isDark && styles.darkStatsGrid]}>
-            <View style={[styles.statItem, isDark && styles.darkStatItem]}>
-              <MaterialIcons name="timer" size={24} color={isDark ? '#fff' : '#333'} />
-              <Text style={[styles.statValue, isDark && styles.darkText]}>{sessions}</Text>
-              <Text style={[styles.statLabel, isDark && styles.darkText]}>Sessions</Text>
+        <View
+          style={[
+            styles.statsContainer,
+            {
+              backgroundColor: currentThemeColors.background,
+              borderColor: currentThemeColors.border,
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text style={[styles.statsTitle, { color: currentThemeColors.text }]}>Today's Progress</Text>
+          <View style={styles.statsGrid}>
+            <View style={[styles.statItem, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+              <MaterialIcons name="timer" size={24} color={currentThemeColors.primary} />
+              <Text style={[styles.statValue, { color: currentThemeColors.text }]}>{sessions}</Text>
+              <Text style={[styles.statLabel, { color: currentThemeColors.secondary }]}>Sessions</Text>
             </View>
-            <View style={[styles.statItem, isDark && styles.darkStatItem]}>
-              <MaterialIcons name="schedule" size={24} color={isDark ? '#fff' : '#333'} />
-              <Text style={[styles.statValue, isDark && styles.darkText]}>
+            <View style={[styles.statItem, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+              <MaterialIcons name="schedule" size={24} color={currentThemeColors.primary} />
+              <Text style={[styles.statValue, { color: currentThemeColors.text }]}>
                 {sessions * settings.workDuration}
               </Text>
-              <Text style={[styles.statLabel, isDark && styles.darkText]}>Minutes</Text>
+              <Text style={[styles.statLabel, { color: currentThemeColors.secondary }]}>Minutes</Text>
             </View>
           </View>
         </View>
       </ScrollView>
 
       {showSettings && (
-        <View style={[styles.settingsModal, isDark && styles.darkSettingsModal]}>
-          <View style={[styles.settingsContent, isDark && styles.darkSettingsContent]}>
-            <Text style={[styles.settingsTitle, isDark && styles.darkText]}>Timer Settings</Text>
-            
-            <View style={[styles.settingItem, isDark && styles.darkSettingItem]}>
-              <Text style={[styles.settingLabel, isDark && styles.darkText]}>Work Time (minutes)</Text>
-              <View style={[styles.settingControls, isDark && styles.darkSettingControls]}>
+        <View style={[styles.settingsModal, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[styles.settingsContent, { backgroundColor: currentThemeColors.background }]}>
+            <Text style={[styles.settingsTitle, { color: currentThemeColors.text }]}>Timer Settings</Text>
+
+            <View style={styles.settingItem}>
+              <Text style={[styles.settingLabel, { color: currentThemeColors.text }]}>Work Time (minutes)</Text>
+              <View style={[styles.settingControls, { backgroundColor: currentThemeColors.buttonSecondary }]}>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, workDuration: Math.max(1, settings.workDuration - 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, workDuration: Math.max(1, settings.workDuration - 1) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="remove" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="remove"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
-                <Text style={[styles.settingValue, isDark && styles.darkText]}>{settings.workDuration}</Text>
+                <Text style={[styles.settingValue, { color: currentThemeColors.text }]}>{settings.workDuration}</Text>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, workDuration: Math.min(60, settings.workDuration + 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, workDuration: Math.min(60, settings.workDuration + 1) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="add" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="add"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
 
-            <View style={[styles.settingItem, isDark && styles.darkSettingItem]}>
-              <Text style={[styles.settingLabel, isDark && styles.darkText]}>Break Time (minutes)</Text>
-              <View style={[styles.settingControls, isDark && styles.darkSettingControls]}>
+            <View style={styles.settingItem}>
+              <Text style={[styles.settingLabel, { color: currentThemeColors.text }]}>Break Time (minutes)</Text>
+              <View style={[styles.settingControls, { backgroundColor: currentThemeColors.buttonSecondary }]}>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, breakDuration: Math.max(1, settings.breakDuration - 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, breakDuration: Math.max(1, settings.breakDuration - 1) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="remove" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="remove"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
-                <Text style={[styles.settingValue, isDark && styles.darkText]}>{settings.breakDuration}</Text>
+                <Text style={[styles.settingValue, { color: currentThemeColors.text }]}>{settings.breakDuration}</Text>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, breakDuration: Math.min(30, settings.breakDuration + 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, breakDuration: Math.min(30, settings.breakDuration + 1) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="add" size={24} color={isDark ? '#fff' : '#333'} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={[styles.settingItem, isDark && styles.darkSettingItem]}>
-              <Text style={[styles.settingLabel, isDark && styles.darkText]}>Long Break Time (minutes)</Text>
-              <View style={[styles.settingControls, isDark && styles.darkSettingControls]}>
-                <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, longBreakDuration: Math.max(5, settings.longBreakDuration - 5) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
-                >
-                  <MaterialIcons name="remove" size={24} color={isDark ? '#fff' : '#333'} />
-                </TouchableOpacity>
-                <Text style={[styles.settingValue, isDark && styles.darkText]}>{settings.longBreakDuration}</Text>
-                <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, longBreakDuration: Math.min(60, settings.longBreakDuration + 5) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
-                >
-                  <MaterialIcons name="add" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="add"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
 
-            <View style={[styles.settingItem, isDark && styles.darkSettingItem]}>
-              <Text style={[styles.settingLabel, isDark && styles.darkText]}>Sessions Until Long Break</Text>
-              <View style={[styles.settingControls, isDark && styles.darkSettingControls]}>
+            <View style={styles.settingItem}>
+              <Text style={[styles.settingLabel, { color: currentThemeColors.text }]}>Long Break Time (minutes)</Text>
+              <View style={[styles.settingControls, { backgroundColor: currentThemeColors.buttonSecondary }]}>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, sessionsUntilLongBreak: Math.max(2, settings.sessionsUntilLongBreak - 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, longBreakDuration: Math.max(5, settings.longBreakDuration - 5) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="remove" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="remove"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
-                <Text style={[styles.settingValue, isDark && styles.darkText]}>{settings.sessionsUntilLongBreak}</Text>
+                <Text style={[styles.settingValue, { color: currentThemeColors.text }]}>{settings.longBreakDuration}</Text>
                 <TouchableOpacity
-                  onPress={() => saveSettings({ ...settings, sessionsUntilLongBreak: Math.min(8, settings.sessionsUntilLongBreak + 1) })}
-                  style={[styles.settingButton, isDark && styles.darkSettingButton]}
+                  onPress={() =>
+                    saveSettings({ ...settings, longBreakDuration: Math.min(60, settings.longBreakDuration + 5) })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
                 >
-                  <MaterialIcons name="add" size={24} color={isDark ? '#fff' : '#333'} />
+                  <MaterialIcons
+                    name="add"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.settingItem}>
+              <Text style={[styles.settingLabel, { color: currentThemeColors.text }]}>Sessions Until Long Break</Text>
+              <View style={[styles.settingControls, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+                <TouchableOpacity
+                  onPress={() =>
+                    saveSettings({
+                      ...settings,
+                      sessionsUntilLongBreak: Math.max(2, settings.sessionsUntilLongBreak - 1),
+                    })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
+                >
+                  <MaterialIcons
+                    name="remove"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
+                </TouchableOpacity>
+                <Text
+                  style={[styles.settingValue, { color: currentThemeColors.text }]}
+                >
+                  {settings.sessionsUntilLongBreak}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    saveSettings({
+                      ...settings,
+                      sessionsUntilLongBreak: Math.min(8, settings.sessionsUntilLongBreak + 1),
+                    })
+                  }
+                  style={[styles.settingButton, { backgroundColor: currentThemeColors.primary }]}
+                >
+                  <MaterialIcons
+                    name="add"
+                    size={24}
+                    color={isDark ? currentThemeColors.background : '#000000'}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
 
             <TouchableOpacity
-              style={[styles.closeButton, isDark && styles.darkCloseButton]}
+              style={[styles.closeButton, { backgroundColor: currentThemeColors.primary }]}
               onPress={() => setShowSettings(false)}
             >
-              <Text style={[styles.closeButtonText, isDark && styles.darkText]}>Close</Text>
+              <Text
+                style={[
+                  styles.closeButtonText,
+                  { color: isDark ? currentThemeColors.background : '#000000' },
+                ]}
+              >
+                Close
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -364,59 +455,35 @@ const PomodoroScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F6F8',
-  },
-  darkContainer: {
-    backgroundColor: '#121212',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  darkHeader: {
-    backgroundColor: '#1E1E1E',
-    borderBottomColor: '#333',
-  },
   backButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-  },
-  darkButton: {
-    backgroundColor: '#333',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
-  },
-  darkText: {
-    color: '#fff',
   },
   settingsButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
   },
   content: {
     flex: 1,
     padding: 16,
   },
-  darkContent: {
-    backgroundColor: '#121212',
-  },
   timerContainer: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -427,18 +494,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  darkTimerContainer: {
-    backgroundColor: '#1E1E1E',
-  },
   timerText: {
     fontSize: 72,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 24,
   },
   timerLabel: {
     fontSize: 18,
-    color: '#666',
     marginBottom: 8,
   },
   controls: {
@@ -447,14 +509,10 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 24,
   },
-  darkControls: {
-    backgroundColor: 'transparent',
-  },
   controlButton: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 2,
@@ -463,11 +521,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  darkControlButton: {
-    backgroundColor: '#1E1E1E',
-  },
   statsContainer: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     elevation: 2,
@@ -476,41 +530,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  darkStatsContainer: {
-    backgroundColor: '#1E1E1E',
-  },
   statsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 16,
   },
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
   },
-  darkStatsGrid: {
-    backgroundColor: 'transparent',
-  },
   statItem: {
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#F5F5F5',
     borderRadius: 12,
     minWidth: 120,
-  },
-  darkStatItem: {
-    backgroundColor: '#333',
   },
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
     marginTop: 8,
   },
   statLabel: {
     fontSize: 14,
-    color: '#666',
     marginTop: 4,
   },
   settingsModal: {
@@ -519,84 +560,57 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  darkSettingsModal: {
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-  },
   settingsContent: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 24,
     width: '90%',
     maxWidth: 400,
   },
-  darkSettingsContent: {
-    backgroundColor: '#1E1E1E',
-  },
   settingsTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 16,
   },
   settingItem: {
     marginBottom: 16,
   },
-  darkSettingItem: {
-    backgroundColor: 'transparent',
-  },
   settingLabel: {
     fontSize: 16,
-    color: '#333',
     marginBottom: 8,
   },
   settingControls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F5F5F5',
     borderRadius: 8,
     padding: 8,
-  },
-  darkSettingControls: {
-    backgroundColor: '#333',
   },
   settingButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  darkSettingButton: {
-    backgroundColor: '#1E1E1E',
   },
   settingValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
     minWidth: 40,
     textAlign: 'center',
   },
   closeButton: {
-    backgroundColor: '#F5F5F5',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 16,
   },
-  darkCloseButton: {
-    backgroundColor: '#333',
-  },
   closeButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
   },
 });
 
-export default PomodoroScreen; 
+export default PomodoroScreen;

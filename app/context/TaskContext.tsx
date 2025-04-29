@@ -59,7 +59,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
               title: data.title,
               description: data.description,
               deadline: data.deadline,
-              dueDate: data.deadline ? new Date(data.deadline.seconds * 1000) : undefined,
+              dueDate: data.deadline ? new Date(data.deadline.seconds * 1000) : null,
               priority: data.priority,
               category: data.category,
               createdAt: new Date(data.createdAt.seconds * 1000),
@@ -67,7 +67,10 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
               status: data.status || 'pending',
               userId: data.userId,
               completedAt: data.completedAt ? new Date(data.completedAt.seconds * 1000) : undefined,
-              isRecurring: data.isRecurring || false
+              isRecurring: data.isRecurring || false,
+              recurringType: data.recurringType,
+              recurringInterval: data.recurringInterval || 1,
+              recurringEndDate: data.recurringEndDate ? new Date(data.recurringEndDate.seconds * 1000) : null
             };
           });
           
@@ -88,11 +91,12 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
     return () => unsubscribeAuth();
   }, []);
 
-  // Filter and sort tasks when dependencies change
+  // Ensure the status filter and sorting logic are properly applied
   useEffect(() => {
     if (tasks.length > 0) {
       let filtered = [...tasks];
 
+      // Apply search query filter
       if (searchQuery) {
         filtered = filtered.filter(
           task =>
@@ -101,6 +105,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
         );
       }
 
+      // Apply status filter
       if (statusFilter !== 'all') {
         filtered = filtered.filter(task => {
           switch (statusFilter) {
@@ -116,6 +121,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
         });
       }
 
+      // Apply sorting logic
       filtered.sort((a, b) => {
         switch (sortKey) {
           case 'deadline':
@@ -286,4 +292,4 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   );
 };
 
-export default TaskContext; 
+export default TaskContext;

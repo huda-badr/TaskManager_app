@@ -76,10 +76,35 @@ The TaskManager app has the following specific features:
 - Voice commands for hands-free operation
 - Store section for purchasing app upgrades and features
 
+SCHEDULING FOCUS:
+- When users ask about their tasks or schedule, always prioritize creating an organized time plan.
+- Group tasks by day (Today, Tomorrow, This Week, Next Week) and then by priority within each day.
+- Always consider task deadlines when suggesting schedules.
+- For high priority tasks with close deadlines, suggest specific timeblocks.
+- For recurring tasks, recommend consistent time slots.
+- Suggest buffer time between tasks to prevent burnout.
+- When creating schedules, follow this structured format:
+  * TODAY'S SCHEDULE:
+    - Morning: [Task name] (Priority: High/Medium/Low)
+    - Afternoon: [Task name] (Priority: High/Medium/Low)
+    - Evening: [Task name] (Priority: High/Medium/Low)
+  * TOMORROW'S SCHEDULE:
+    [Similar structure]
+  * REST OF THE WEEK:
+    [Similar structure]
+
+FORMAT YOUR RESPONSES:
+- Use clear headings (## or bold text) for different sections
+- Use bullet points for lists of tasks or recommendations
+- Separate different types of information with line breaks
+- Present schedules in a time-based format (morning/afternoon/evening)
+- Format deadlines consistently as: [Date] at [Time]
+- Use emojis sparingly to highlight important information (⏰ for deadlines, 🔴 for high priority, etc.)
+
 When responding about tasks:
-- High priority tasks are marked with red color
-- Medium priority tasks are marked with orange color
-- Low priority tasks are marked with green color
+- High priority tasks are marked with red color 🔴
+- Medium priority tasks are marked with orange color 🟠
+- Low priority tasks are marked with green color 🟢
 - Tasks show completion status (completed/in progress)
 - Tasks have titles, descriptions, and due dates
 
@@ -95,6 +120,7 @@ When the user asks about their tasks:
 - Congratulate them on completed tasks
 - Offer productivity strategies tailored to their specific tasks
 - Suggest using the app's Schedule calendar to plan their tasks if they have upcoming deadlines
+- Always provide a suggested schedule when discussing pending tasks
 
 If the user needs a new task, encourage them to create it by typing:
 "Create a task called [task name]" or "Add a task [task name]"
@@ -129,23 +155,59 @@ const formatTasksForModel = (tasks: Task[]): string => {
   const inProgressTasks = tasks.filter(task => !task.completed && task.status === 'in_progress');
   const completedTasks = tasks.filter(task => task.completed);
 
-  // Format task lists
+  // Sort tasks by due date and priority for better scheduling context
+  const sortByDueDateAndPriority = (a: Task, b: Task) => {
+    // First compare due dates if both exist
+    if (a.dueDate && b.dueDate) {
+      return a.dueDate.getTime() - b.dueDate.getTime();
+    }
+    // Tasks with due dates come first
+    if (a.dueDate && !b.dueDate) return -1;
+    if (!a.dueDate && b.dueDate) return 1;
+    
+    // Then sort by priority
+    const priorityWeight = { 'high': 0, 'medium': 1, 'low': 2 };
+    return priorityWeight[a.priority.toLowerCase()] - priorityWeight[b.priority.toLowerCase()];
+  };
+
+  // Sort all task groups
+  pendingTasks.sort(sortByDueDateAndPriority);
+  inProgressTasks.sort(sortByDueDateAndPriority);
+  
+  // Format task lists with more scheduling-relevant details
   let formattedTasks = '';
   
   if (pendingTasks.length > 0) {
-    formattedTasks += "Pending Tasks:\n";
+    formattedTasks += "Pending Tasks (needs scheduling):\n";
     pendingTasks.forEach((task, index) => {
+      // Include more details useful for scheduling
       const dueDate = task.dueDate ? task.dueDate.toLocaleDateString() : 'No deadline';
-      formattedTasks += `${index + 1}. ${task.title} (Priority: ${task.priority}, Due: ${dueDate})\n`;
+      const dueTime = task.dueDate ? task.dueDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+      const dueDateTimeStr = task.dueDate ? `${dueDate} at ${dueTime}` : 'No deadline';
+      const estimatedDuration = task.estimatedDuration || 'Not specified';
+      const category = task.category || 'Uncategorized';
+      
+      formattedTasks += `${index + 1}. ${task.title} (Priority: ${task.priority}, Due: ${dueDateTimeStr}, Category: ${category})\n`;
+      if (task.description) {
+        formattedTasks += `   Description: ${task.description}\n`;
+      }
     });
     formattedTasks += '\n';
   }
   
   if (inProgressTasks.length > 0) {
-    formattedTasks += "In Progress Tasks:\n";
+    formattedTasks += "In Progress Tasks (continue scheduling):\n";
     inProgressTasks.forEach((task, index) => {
       const dueDate = task.dueDate ? task.dueDate.toLocaleDateString() : 'No deadline';
-      formattedTasks += `${index + 1}. ${task.title} (Priority: ${task.priority}, Due: ${dueDate})\n`;
+      const dueTime = task.dueDate ? task.dueDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+      const dueDateTimeStr = task.dueDate ? `${dueDate} at ${dueTime}` : 'No deadline';
+      const estimatedDuration = task.estimatedDuration || 'Not specified';
+      const category = task.category || 'Uncategorized';
+      
+      formattedTasks += `${index + 1}. ${task.title} (Priority: ${task.priority}, Due: ${dueDateTimeStr}, Category: ${category})\n`;
+      if (task.description) {
+        formattedTasks += `   Description: ${task.description}\n`;
+      }
     });
     formattedTasks += '\n';
   }
@@ -158,6 +220,19 @@ const formatTasksForModel = (tasks: Task[]): string => {
       formattedTasks += `${index + 1}. ${task.title} (Completed: ${completedDate})\n`;
     });
   }
+  
+  // Add extra context for scheduling
+  const today = new Date();
+  const todayStr = today.toLocaleDateString();
+  const tomorrowStr = new Date(today.getTime() + 24 * 60 * 60 * 1000).toLocaleDateString();
+  const dayAfterTomorrowStr = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString();
+  
+  formattedTasks += '\nScheduling Context:\n';
+  formattedTasks += `- Today's date: ${todayStr}\n`;
+  formattedTasks += `- Tomorrow's date: ${tomorrowStr}\n`;
+  formattedTasks += `- Day after tomorrow: ${dayAfterTomorrowStr}\n`;
+  formattedTasks += `- Current time: ${today.toLocaleTimeString()}\n`;
+  formattedTasks += '- Best practices: Schedule high priority tasks earlier in the day, include breaks between tasks\n';
   
   return formattedTasks;
 };
@@ -296,4 +371,10 @@ export const generateFallbackResponse = async (message: string): Promise<string>
   else {
     return GENERAL_RESPONSES[Math.floor(Math.random() * GENERAL_RESPONSES.length)];
   }
-}; 
+};
+
+export default {
+  generateResponse,
+  generateResponseWithTasks,
+  resetChatHistory
+};

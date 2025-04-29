@@ -1,4 +1,8 @@
 export interface Task {
+  recurringInterval: number;
+  recurringEndDate: any;
+  recurringType: string;
+  isRecurringInstance: boolean | undefined;
   id: string;
   title: string;
   description?: string;

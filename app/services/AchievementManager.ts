@@ -196,7 +196,30 @@ export const AchievementManager = {
       const userId = auth.currentUser?.uid;
       if (!userId) return;
       
-      // Similar implementation as updateMoodTrackingAchievement
+      // Get the voice command achievement from realtime database
+      const userRef = ref(rtdb, `users/${userId}/achievements/voice_commands`);
+      const snapshot = await get(userRef);
+      
+      if (snapshot.exists()) {
+        const achievement = snapshot.val();
+        if (achievement.completed) return;
+        
+        // Increment progress
+        const newProgress = (achievement.progress || 0) + 1;
+        const completed = newProgress >= achievement.total;
+        
+        // Update the achievement
+        await update(userRef, {
+          progress: newProgress,
+          completed,
+          updatedAt: new Date().toISOString()
+        });
+        
+        if (completed) {
+          Alert.alert('Achievement Unlocked!', 'You\'ve unlocked the Voice Commander achievement!');
+        }
+      }
+      
       console.log('Voice command achievement updated');
     } catch (error) {
       console.error('Error updating voice command achievement:', error);

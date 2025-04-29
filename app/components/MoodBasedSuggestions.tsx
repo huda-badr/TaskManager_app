@@ -75,7 +75,7 @@ const MoodBasedSuggestions: React.FC<MoodBasedSuggestionsProps> = ({
             <View style={[styles.checkupButton, isDark && styles.darkCheckupButton]}>
               <MaterialIcons name="add-reaction" size={20} color={isDark ? '#fff' : '#2196F3'} />
               <Text style={[styles.checkupText, isDark && styles.darkCheckupText]}>
-                Set your mood
+                mood
               </Text>
             </View>
           )}

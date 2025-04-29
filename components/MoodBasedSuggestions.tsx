@@ -16,28 +16,42 @@ interface MoodBasedSuggestionsProps {
   currentMood: string | null;
   onSelectTask: (taskId: string) => void;
   onOpenMoodCheckup: () => void;
+  isDark?: boolean; // Added isDark prop for theme support
 }
 
 interface Styles {
   container: ViewStyle;
+  darkContainer: ViewStyle; // Added for dark theme
   header: ViewStyle;
   title: TextStyle;
+  darkTitle: TextStyle; // Added for dark theme
   moodButton: ViewStyle;
+  darkMoodButton: ViewStyle; // Added for dark theme
   moodText: TextStyle;
+  darkMoodText: TextStyle; // Added for dark theme
   taskList: ViewStyle;
   taskItem: ViewStyle;
+  darkTaskItem: ViewStyle; // Added for dark theme
   taskContent: ViewStyle;
   taskTitle: TextStyle;
+  darkTaskTitle: TextStyle; // Added for dark theme
   taskDeadline: TextStyle;
+  darkTaskDeadline: TextStyle; // Added for dark theme
   taskMeta: ViewStyle;
   priorityBadge: ViewStyle;
   priorityHigh: ViewStyle;
   priorityMedium: ViewStyle;
   priorityLow: ViewStyle;
+  darkPriorityHigh: ViewStyle; // Added for dark theme
+  darkPriorityMedium: ViewStyle; // Added for dark theme
+  darkPriorityLow: ViewStyle; // Added for dark theme
   priorityText: TextStyle;
+  darkPriorityText: TextStyle; // Added for dark theme
   categoryText: TextStyle;
+  darkCategoryText: TextStyle; // Added for dark theme
   emptyContainer: ViewStyle;
   emptyText: TextStyle;
+  darkEmptyText: TextStyle; // Added for dark theme
 }
 
 const styles = StyleSheet.create<Styles>({
@@ -52,6 +66,11 @@ const styles = StyleSheet.create<Styles>({
     shadowRadius: 4,
     elevation: 3,
   },
+  darkContainer: {
+    backgroundColor: '#292929',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -62,6 +81,9 @@ const styles = StyleSheet.create<Styles>({
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
+  },
+  darkTitle: {
+    color: '#fff',
   },
   moodButton: {
     flexDirection: 'row',
@@ -76,10 +98,16 @@ const styles = StyleSheet.create<Styles>({
     shadowRadius: 2,
     elevation: 2,
   },
+  darkMoodButton: {
+    backgroundColor: '#3a3a3a',
+  },
   moodText: {
     fontSize: 14,
     color: '#666',
     marginRight: 4,
+  },
+  darkMoodText: {
+    color: '#ccc',
   },
   taskList: {
     maxHeight: 200,
@@ -97,6 +125,9 @@ const styles = StyleSheet.create<Styles>({
     shadowRadius: 2,
     elevation: 2,
   },
+  darkTaskItem: {
+    backgroundColor: '#3a3a3a',
+  },
   taskContent: {
     flex: 1,
   },
@@ -106,10 +137,16 @@ const styles = StyleSheet.create<Styles>({
     color: '#333',
     marginBottom: 2,
   },
+  darkTaskTitle: {
+    color: '#fff',
+  },
   taskDeadline: {
     fontSize: 12,
     color: '#666',
     marginBottom: 2,
+  },
+  darkTaskDeadline: {
+    color: '#aaa',
   },
   taskMeta: {
     flexDirection: 'row',
@@ -131,14 +168,29 @@ const styles = StyleSheet.create<Styles>({
   priorityLow: {
     backgroundColor: '#e8f5e9',
   },
+  darkPriorityHigh: {
+    backgroundColor: '#4a2525',
+  },
+  darkPriorityMedium: {
+    backgroundColor: '#4a3a25',
+  },
+  darkPriorityLow: {
+    backgroundColor: '#25432c',
+  },
   priorityText: {
     fontSize: 10,
     fontWeight: '500',
+  },
+  darkPriorityText: {
+    color: '#ddd',
   },
   categoryText: {
     fontSize: 10,
     color: '#666',
     fontStyle: 'italic',
+  },
+  darkCategoryText: {
+    color: '#aaa',
   },
   emptyContainer: {
     padding: 10,
@@ -151,6 +203,9 @@ const styles = StyleSheet.create<Styles>({
     fontSize: 12,
     lineHeight: 18,
   },
+  darkEmptyText: {
+    color: '#aaa',
+  },
 });
 
 const MOOD_TASK_PRIORITIES = {
@@ -162,23 +217,23 @@ const MOOD_TASK_PRIORITIES = {
 };
 
 const MOOD_CATEGORIES = {
-  happy: ['creative', 'social', 'learning'],
-  neutral: ['routine', 'organization', 'maintenance'],
-  tired: ['simple', 'quick', 'relaxing'],
-  stressed: ['mindful', 'self-care', 'planning'],
-  productive: ['important', 'challenging', 'focus'],
+  happy: ['creative', 'social', 'learning', 'enjoyable', 'expressive', 'collaborative', 'innovative', 'fulfilling', 'engaging', 'inspiring'],
+  neutral: ['routine', 'organization', 'maintenance', 'administrative', 'methodical', 'structured', 'systematic', 'practical', 'essential', 'standard'],
+  tired: ['simple', 'quick', 'relaxing', 'manageable', 'effortless', 'brief', 'straightforward', 'undemanding', 'low-effort', 'restful'],
+  stressed: ['mindful', 'self-care', 'planning', 'calming', 'organizing', 'preparing', 'reflecting', 'prioritizing', 'incremental', 'therapeutic'],
+  productive: ['important', 'challenging', 'focus', 'strategic', 'high-value', 'skill-building', 'analytical', 'complex', 'achievement', 'growth'],
 };
 
-const getPriorityStyle = (priority: string): ViewStyle => {
+const getPriorityStyle = (priority: string, isDark: boolean): ViewStyle => {
   switch (priority.toLowerCase()) {
     case 'high':
-      return styles.priorityHigh;
+      return isDark ? styles.darkPriorityHigh : styles.priorityHigh;
     case 'medium':
-      return styles.priorityMedium;
+      return isDark ? styles.darkPriorityMedium : styles.priorityMedium;
     case 'low':
-      return styles.priorityLow;
+      return isDark ? styles.darkPriorityLow : styles.priorityLow;
     default:
-      return styles.priorityMedium;
+      return isDark ? styles.darkPriorityMedium : styles.priorityMedium;
   }
 };
 
@@ -187,6 +242,7 @@ export default function MoodBasedSuggestions({
   currentMood,
   onSelectTask,
   onOpenMoodCheckup,
+  isDark = false, // Default value for backward compatibility
 }: MoodBasedSuggestionsProps) {
   const getSuggestedTasks = () => {
     if (!currentMood) return [];
@@ -221,21 +277,24 @@ export default function MoodBasedSuggestions({
   const suggestedTasks = getSuggestedTasks();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isDark && styles.darkContainer]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Suggested Tasks</Text>
-        <TouchableOpacity style={styles.moodButton} onPress={onOpenMoodCheckup}>
-          <Text style={styles.moodText}>
+        <Text style={[styles.title, isDark && styles.darkTitle]}>Suggested Tasks</Text>
+        <TouchableOpacity 
+          style={[styles.moodButton, isDark && styles.darkMoodButton]} 
+          onPress={onOpenMoodCheckup}
+        >
+          <Text style={[styles.moodText, isDark && styles.darkMoodText]}>
             {currentMood ? `Mood: ${currentMood.charAt(0).toUpperCase() + currentMood.slice(1)}` : 'Set Your Mood'}
           </Text>
-          <MaterialIcons name="mood" size={16} color="#666" />
+          <MaterialIcons name="mood" size={16} color={isDark ? '#ccc' : '#666'} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.taskList}>
         {suggestedTasks.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, isDark && styles.darkEmptyText]}>
               {currentMood
                 ? "No matching tasks found for your current mood."
                 : "Set your mood to get personalized task suggestions!"}
@@ -245,32 +304,36 @@ export default function MoodBasedSuggestions({
           suggestedTasks.map((task) => (
             <TouchableOpacity
               key={task.id}
-              style={styles.taskItem}
+              style={[styles.taskItem, isDark && styles.darkTaskItem]}
               onPress={() => onSelectTask(task.id)}
             >
               <View style={styles.taskContent}>
-                <Text style={styles.taskTitle}>{task.title}</Text>
+                <Text style={[styles.taskTitle, isDark && styles.darkTaskTitle]}>
+                  {task.title}
+                </Text>
                 {task.dueDate && (
-                  <Text style={styles.taskDeadline}>
+                  <Text style={[styles.taskDeadline, isDark && styles.darkTaskDeadline]}>
                     Due: {task.dueDate.toLocaleDateString()}
                   </Text>
                 )}
                 <View style={styles.taskMeta}>
-                  <View style={[styles.priorityBadge, getPriorityStyle(task.priority)]}>
-                    <Text style={styles.priorityText}>
+                  <View style={[styles.priorityBadge, getPriorityStyle(task.priority, isDark)]}>
+                    <Text style={[styles.priorityText, isDark && styles.darkPriorityText]}>
                       {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
                     </Text>
                   </View>
                   {task.category && (
-                    <Text style={styles.categoryText}>{task.category}</Text>
+                    <Text style={[styles.categoryText, isDark && styles.darkCategoryText]}>
+                      {task.category}
+                    </Text>
                   )}
                 </View>
               </View>
-              <MaterialIcons name="chevron-right" size={20} color="#666" />
+              <MaterialIcons name="chevron-right" size={20} color={isDark ? '#ccc' : '#666'} />
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
     </View>
   );
-} 
+}

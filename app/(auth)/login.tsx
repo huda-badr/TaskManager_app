@@ -4,11 +4,14 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth, db } from "@/config/firebase";
 import { router } from "expo-router";
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const { theme, currentThemeColors } = useTheme();
+  const isDark = theme === 'dark';
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -58,36 +61,58 @@ export default function Login() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome Back!</Text>
+    <View style={[styles.container, { backgroundColor: currentThemeColors.background }]}>
+      <Text style={[styles.title, { color: currentThemeColors.text }]}>Welcome Back!</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input, 
+          { 
+            borderColor: currentThemeColors.border || '#ddd',
+            backgroundColor: isDark ? '#1E1E1E' : '#fff',
+            color: currentThemeColors.text 
+          }
+        ]}
         placeholder="Email"
+        placeholderTextColor={isDark ? "#aaa" : "#666"}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
       />
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input, 
+          { 
+            borderColor: currentThemeColors.border || '#ddd',
+            backgroundColor: isDark ? '#1E1E1E' : '#fff',
+            color: currentThemeColors.text 
+          }
+        ]}
         placeholder="Password"
+        placeholderTextColor={isDark ? "#aaa" : "#666"}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
       />
       <TouchableOpacity 
-        style={styles.loginButton} 
+        style={[
+          styles.loginButton, 
+          { backgroundColor: currentThemeColors.primary }
+        ]} 
         onPress={handleLogin}
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={currentThemeColors.background} />
         ) : (
-          <Text style={styles.loginButtonText}>Login</Text>
+          <Text style={[styles.loginButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Login</Text>
         )}
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+        <Text style={[styles.forgotPasswordText, { color: currentThemeColors.primary }]}>Forgot Password?</Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => router.push("/(auth)/signup")}>
-        <Text style={styles.signupButtonText}>Don't have an account? Sign up</Text>
+        <Text style={[styles.signupButtonText, { color: currentThemeColors.primary }]}>Don't have an account? Sign up</Text>
       </TouchableOpacity>
     </View>
   );
@@ -99,19 +124,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#fff",
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 20,
-    color: "#333",
   },
   input: {
     width: "100%",
     height: 50,
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 8,
     paddingHorizontal: 15,
     marginBottom: 15,
@@ -120,21 +142,23 @@ const styles = StyleSheet.create({
   loginButton: {
     width: "100%",
     height: 50,
-    backgroundColor: "#007bff",
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
   },
   loginButtonText: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
   },
+  forgotPasswordText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 10,
+  },
   signupButtonText: {
-    color: "#007bff",
     fontSize: 16,
     fontWeight: "bold",
     marginTop: 20,
   },
-}); 
+});

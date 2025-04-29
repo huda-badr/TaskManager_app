@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Image, Dimensions, FlatList, ScrollView } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Image, Dimensions, FlatList, ScrollView, TextInput } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Task } from '@/types';
 import { AchievementManager } from '@/app/services/AchievementManager';
 import { auth, rtdb } from '@/config/firebase';
 import { ref, get, onValue } from 'firebase/database';
+import { useTheme } from '@/app/context/ThemeContext';
+
+// Add the missing blue color constant
+const blueColor = '#3498db';
 
 // League tiers
 const LEAGUE_TIERS = [
@@ -292,6 +296,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
   onRefresh,
   refreshing,
 }) => {
+  const { currentThemeColors } = useTheme();
   const [fadeAnims] = useState(() => 
     achievements.map(() => new Animated.Value(0))
   );
@@ -301,6 +306,8 @@ export const Achievements: React.FC<AchievementsProps> = ({
   const [currentLeague, setCurrentLeague] = useState<string>('Bronze');
   const [nextLeague, setNextLeague] = useState<string>('Silver');
   const [pointsToNextLeague, setPointsToNextLeague] = useState<number>(100);
+  const [searchText, setSearchText] = useState<string>('');
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // When achievements load, animate them in sequence
@@ -345,6 +352,16 @@ export const Achievements: React.FC<AchievementsProps> = ({
   const userLevel = getAchievementLevel(userPoints);
 
   const handleClaimReward = async (achievementId: string) => {
+    // Check if the achievement is already claimed - if so, don't proceed
+    const achievement = achievements.find(a => a.id === achievementId);
+    if (achievement && achievement.claimed) {
+      Alert.alert(
+        "Already Claimed",
+        "You've already claimed this achievement reward!"
+      );
+      return;
+    }
+    
     if (onClaimReward) {
       onClaimReward(achievementId);
     }
@@ -358,21 +375,33 @@ export const Achievements: React.FC<AchievementsProps> = ({
 
   const getProgressColor = (progress: number, total: number) => {
     const ratio = progress / total;
-    if (ratio < 0.3) return isDark ? '#555' : '#e0e0e0';
-    if (ratio < 0.7) return '#FFC107';
-    return '#4CAF50';
+    if (ratio < 0.3) return isDark ? currentThemeColors.border : currentThemeColors.buttonSecondary;
+    if (ratio < 0.7) return currentThemeColors.warning;
+    return currentThemeColors.success;
   };
 
   const filterAchievements = () => {
-    if (selectedCategory === 'all') {
-      return achievements;
-    } else if (selectedCategory === 'completed') {
-      return achievements.filter(achievement => achievement.completed);
+    let filtered = achievements;
+    
+    // Filter by category
+    if (selectedCategory === 'completed') {
+      filtered = filtered.filter(achievement => achievement.completed);
     } else if (selectedCategory === 'unclaimed') {
-      return achievements.filter(achievement => achievement.completed && !achievement.claimed);
-    } else {
-      return achievements.filter(achievement => achievement.type === selectedCategory);
+      filtered = filtered.filter(achievement => achievement.completed && !achievement.claimed);
+    } else if (selectedCategory !== 'all') {
+      filtered = filtered.filter(achievement => achievement.type === selectedCategory);
     }
+    
+    // Filter by search text if any
+    if (searchText) {
+      const lowerCaseSearch = searchText.toLowerCase();
+      filtered = filtered.filter(achievement => 
+        achievement.title.toLowerCase().includes(lowerCaseSearch) || 
+        achievement.description.toLowerCase().includes(lowerCaseSearch)
+      );
+    }
+    
+    return filtered;
   };
 
   const getLeagueColor = (league: string): string => {
@@ -396,33 +425,24 @@ export const Achievements: React.FC<AchievementsProps> = ({
     const progressColor = getProgressColor(achievement.progress, achievement.total);
     
     const gradientColors = isDark 
-      ? ['#2A2A2A', '#1A1A1A'] as const
-      : ['#FFFFFF', '#F5F5F5'] as const;
+      ? [currentThemeColors.buttonSecondary, currentThemeColors.background] as const
+      : [currentThemeColors.background, currentThemeColors.buttonPrimary] as const;
     
     const iconGradientColors = achievement.completed
-      ? ['#4CAF50', '#2E7D32'] as const
-      : (isDark ? ['#444', '#333'] as const : ['#EEE', '#DDD'] as const);
+      ? ['#FFD700', '#FFC107'] as const
+      : [blueColor, '#3498db'] as const;
+    
+    // Determine if the achievement is claimable: must be completed AND not claimed
+    const isClaimable = achievement.completed && !achievement.claimed;
 
     return (
-      <Animated.View 
-        key={achievement.id}
+      <Animated.View
         style={[
           styles.achievementContainer,
-          {
-            opacity: fadeAnims[index],
-            transform: [
-              { 
-                translateY: fadeAnims[index].interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [20, 0]
-                })
-              }
-            ]
-          },
           isDark && styles.achievementContainerDark
         ]}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.achievementCard}
           onPress={() => toggleExpandAchievement(achievement.id)}
           activeOpacity={0.7}
@@ -443,7 +463,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
                   <MaterialIcons
                     name={achievement.icon as any}
                     size={28}
-                    color={achievement.completed ? '#FFD700' : (isDark ? '#999' : '#666')}
+                    color={achievement.completed ? '#FFD700' : blueColor}
                   />
                 </LinearGradient>
               </View>
@@ -451,7 +471,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
               <View style={styles.achievementInfo}>
                 <Text style={[
                   styles.achievementTitle,
-                  isDark && styles.textDark,
+                  { color: currentThemeColors.primary },
                   achievement.completed && styles.completedTitle
                 ]}>
                   {achievement.title}
@@ -460,7 +480,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
                 <View style={styles.progressBarContainer}>
                   <View style={[
                     styles.progressBar,
-                    { backgroundColor: isDark ? '#333' : '#eee' }
+                    { backgroundColor: isDark ? currentThemeColors.border : currentThemeColors.buttonSecondary }
                   ]}>
                     <View
                       style={[
@@ -471,7 +491,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
                   </View>
                   <Text style={[
                     styles.progressText,
-                    isDark && styles.textDark
+                    { color: currentThemeColors.text }
                   ]}>
                     {achievement.progress}/{achievement.total}
                   </Text>
@@ -479,33 +499,33 @@ export const Achievements: React.FC<AchievementsProps> = ({
               </View>
 
               <View style={styles.statusContainer}>
-                {achievement.completed && !achievement.claimed ? (
+                {isClaimable ? (
                   <TouchableOpacity
-                    style={styles.claimButton}
+                    style={[styles.claimButton, { backgroundColor: currentThemeColors.success }]}
                     onPress={() => handleClaimReward(achievement.id)}
                   >
                     <Text style={styles.claimButtonText}>Claim</Text>
                   </TouchableOpacity>
                 ) : achievement.claimed ? (
-                  <View style={styles.claimedBadge}>
-                    <MaterialIcons name="verified" size={18} color="#4CAF50" />
-                    <Text style={styles.claimedText}>Claimed</Text>
+                  <View style={[styles.claimedBadge, { backgroundColor: `${currentThemeColors.border}50` }]}>
+                    <MaterialIcons name="verified" size={18} color={currentThemeColors.success} />
+                    <Text style={[styles.claimedText, { color: currentThemeColors.success }]}>Claimed</Text>
                   </View>
                 ) : (
                   <MaterialIcons
                     name={isExpanded ? "expand-less" : "expand-more"}
                     size={24}
-                    color={isDark ? "#999" : "#666"}
+                    color={currentThemeColors.text}
                   />
                 )}
               </View>
             </View>
 
             {isExpanded && (
-              <View style={styles.expandedContent}>
+              <View style={[styles.expandedContent, { borderTopColor: currentThemeColors.border }]}>
                 <Text style={[
                   styles.achievementDescription,
-                  isDark && styles.textDark
+                  { color: blueColor }
                 ]}>
                   {achievement.description}
                 </Text>
@@ -513,7 +533,7 @@ export const Achievements: React.FC<AchievementsProps> = ({
                   <MaterialIcons name="stars" size={18} color="#FFD700" />
                   <Text style={[
                     styles.pointsText,
-                    isDark && styles.textDark
+                    { color: currentThemeColors.text }
                   ]}>
                     {achievement.points} points
                   </Text>
@@ -532,66 +552,32 @@ export const Achievements: React.FC<AchievementsProps> = ({
   const completionPercentage = Math.round((completedCount / totalCount) * 100);
 
   // Create sections for our list
-  const filteredAchievements = filterAchievements().map(achievement => ({
-    type: 'achievement' as const,
-    id: achievement.id,
-    data: achievement
-  }));
+  const filteredAchievements = filterAchievements();
 
-  // Create the header components separately
-  const HeaderComponent = () => (
-    <>
-      <View style={[styles.pointsSummaryCard, isDark && styles.darkPointsSummaryCard]}>
-        <View style={styles.pointsHeader}>
-          <Text style={[styles.pointsHeaderText, isDark && styles.darkText]}>
-            Achievement Points
-          </Text>
-          <MaterialIcons name="emoji-events" size={24} color={isDark ? "#FFD700" : "#FFD700"} />
-        </View>
-        
-        <Text style={[styles.pointsValue, isDark && styles.darkPointsValue]}>
-          {userPoints}
-        </Text>
-        
-        <View style={styles.pointsDescription}>
-          <Text style={[styles.pointsDescriptionText, isDark && styles.darkText]}>
-            {achievements.filter(a => a.completed && a.claimed).length} of {achievements.length} achievements
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.leagueCard, isDark && styles.darkLeagueCard]}>
-        <View style={styles.leagueHeader}>
-          <Text style={[styles.leagueHeaderText, isDark && styles.darkText]}>
-            League Status
-          </Text>
-          <Text style={[styles.leagueIcon]}>{getLeagueIcon(currentLeague)}</Text>
-        </View>
-        
-        <View style={styles.leagueInfo}>
-          <Text style={[styles.currentLeague, { color: getLeagueColor(currentLeague) }]}>
-            {currentLeague} League
-          </Text>
-          <Text style={[styles.leaguePoints, isDark && styles.darkText]}>
-            {userPoints} league points
-          </Text>
-        </View>
-        
-        <View style={styles.nextLeagueContainer}>
-          <Text style={[styles.nextLeagueText, isDark && styles.darkText]}>
-            {pointsToNextLeague} points to {nextLeague} League
-          </Text>
-          <View style={[styles.leagueProgressBar, { backgroundColor: isDark ? '#333' : '#E0E0E0' }]}>
-            <View 
-              style={[
-                styles.leagueProgressFill, 
-                { 
-                  width: `${Math.min(100, (userPoints / (userPoints + pointsToNextLeague)) * 100)}%`,
-                  backgroundColor: getLeagueColor(currentLeague)
-                }
-              ]} 
-            />
-          </View>
+  // Component for search and filters - now part of the scrollable content
+  const SearchAndFilters = () => (
+    <View>
+      <View style={styles.searchContainer}>
+        <View style={[styles.searchBar, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+          <MaterialIcons name="search" size={20} color={currentThemeColors.text} />
+          <TextInput
+            style={[
+              styles.searchInput, 
+              { 
+                color: isDark ? currentThemeColors.text : '#000000',
+                fontWeight: '500'  
+              }
+            ]}
+            placeholder="Search achievements..."
+            placeholderTextColor={currentThemeColors.placeholder}
+            value={searchText}
+            onChangeText={setSearchText}
+          />
+          {searchText ? (
+            <TouchableOpacity onPress={() => setSearchText('')}>
+              <MaterialIcons name="close" size={20} color={currentThemeColors.text} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
@@ -611,47 +597,103 @@ export const Achievements: React.FC<AchievementsProps> = ({
             <TouchableOpacity 
               style={[
                 styles.categoryButton, 
-                selectedCategory === category.id && styles.selectedCategoryButton,
-                isDark && styles.darkCategoryButton,
+                { borderColor: currentThemeColors.text },
+                selectedCategory === category.id && { borderColor: currentThemeColors.success },
                 {marginRight: 10}
               ]}
               onPress={() => setSelectedCategory(category.id)}
             >
               <Text style={[
                 styles.categoryText, 
-                selectedCategory === category.id && styles.selectedCategoryText,
-                isDark && styles.darkText
+                { color: currentThemeColors.text },
+                selectedCategory === category.id && { color: currentThemeColors.success }
               ]}>{category.label}</Text>
             </TouchableOpacity>
           )}
         />
       </View>
-    </>
+    </View>
+  );
+
+  // Stats header component for stats at the top
+  const StatsHeader = () => (
+    <View>
+      <SearchAndFilters />
+      <View style={[styles.pointsSummaryCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+        <View style={styles.pointsHeader}>
+          <Text style={[styles.pointsHeaderText, { color: currentThemeColors.primary }]}>
+            Achievement Points
+          </Text>
+          <MaterialIcons name="emoji-events" size={24} color="#FFD700" />
+        </View>
+        
+        <Text style={[styles.pointsValue, { color: currentThemeColors.success }]}>
+          {userPoints}
+        </Text>
+        
+        <View style={styles.pointsDescription}>
+          <Text style={[styles.pointsDescriptionText, { color: currentThemeColors.text }]}>
+            {achievements.filter(a => a.completed && a.claimed).length} of {achievements.length} achievements
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.leagueCard, { backgroundColor: currentThemeColors.buttonSecondary }]}>
+        <View style={styles.leagueHeader}>
+          <Text style={[styles.leagueHeaderText, { color: currentThemeColors.primary }]}>
+            League Status
+          </Text>
+          <Text style={[styles.leagueIcon]}>{getLeagueIcon(currentLeague)}</Text>
+        </View>
+        
+        <View style={styles.leagueInfo}>
+          <Text style={[styles.currentLeague, { color: getLeagueColor(currentLeague) }]}>
+            {currentLeague} League
+          </Text>
+          <Text style={[styles.leaguePoints, { color: currentThemeColors.text }]}>
+            {userPoints} league points
+          </Text>
+        </View>
+        
+        <View style={styles.nextLeagueContainer}>
+          <Text style={[styles.nextLeagueText, { color: currentThemeColors.text }]}>
+            {pointsToNextLeague} points to {nextLeague} League
+          </Text>
+          <View style={[styles.leagueProgressBar, { backgroundColor: isDark ? currentThemeColors.border : '#E0E0E0' }]}>
+            <View 
+              style={[
+                styles.leagueProgressFill, 
+                { 
+                  width: `${Math.min(100, (userPoints / (userPoints + pointsToNextLeague)) * 100)}%`,
+                  backgroundColor: getLeagueColor(currentLeague)
+                }
+              ]} 
+            />
+          </View>
+        </View>
+      </View>
+    </View>
   );
 
   return (
-    <View style={[styles.container, isDark && styles.darkContainer]}>
-      <FlatList
-        data={filteredAchievements}
-        ListHeaderComponent={HeaderComponent}
-        renderItem={({ item }) => {
-          if (item.type === 'achievement') {
-            const achievement = item.data;
-            if (achievement) {
-              const index = achievements.findIndex(a => a.id === achievement.id);
-              return renderAchievementItem(achievement, index);
-            }
-          }
-          return null;
-        }}
-        keyExtractor={(item) => item.id}
+    <View style={[styles.container, { backgroundColor: currentThemeColors.background }]}>
+      <Animated.FlatList
         contentContainerStyle={styles.achievementsList}
+        data={filteredAchievements}
+        ListHeaderComponent={StatsHeader}
+        renderItem={({ item, index }) => renderAchievementItem(item, index)}
+        keyExtractor={(item) => item.id}
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         windowSize={10}
         removeClippedSubviews={true}
-        refreshing={refreshing}
+        refreshing={refreshing === true}
         onRefresh={onRefresh}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       />
     </View>
   );
@@ -662,16 +704,39 @@ const { width } = Dimensions.get('window');
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   darkContainer: {
     backgroundColor: '#121212',
   },
-  darkText: {
-    color: '#fff',
+  stickyHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
-  textDark: {
-    color: '#fff',
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 16,
+    paddingVertical: 4,
   },
   scrollContent: {
     padding: 16,
@@ -1032,4 +1097,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Achievements; 
+export default Achievements;
