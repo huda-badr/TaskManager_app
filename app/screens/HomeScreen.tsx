@@ -572,13 +572,15 @@ const HomeScreen = () => {
   };
 
   const renderTaskItem = ({ item }: { item: Task }) => (
-    <View style={[
-      styles.taskItem,
-      item.priority === 'high' && styles.highPriorityTask,
-      item.priority === 'medium' && styles.mediumPriorityTask,
-      item.priority === 'low' && styles.lowPriorityTask,
-      { backgroundColor: currentThemeColors.background }
-    ]}>
+    <TouchableOpacity
+      onPress={() => router.push(`/create-task?taskId=${item.id}`)}
+      style={[
+        styles.taskItem,
+        item.priority === 'high' && styles.highPriorityTask,
+        item.priority === 'medium' && styles.mediumPriorityTask,
+        item.priority === 'low' && styles.lowPriorityTask,
+        { backgroundColor: currentThemeColors.background }
+      ]}>
       <View style={styles.taskHeader}>
         <Text style={[
           styles.taskTitle,
@@ -588,14 +590,20 @@ const HomeScreen = () => {
           {item.title}
         </Text>
         <View style={styles.taskActions}>
-          <TouchableOpacity onPress={() => handleTaskComplete(item)}>
+          <TouchableOpacity onPress={(e) => {
+            e.stopPropagation(); // Prevent triggering the parent onPress
+            handleTaskComplete(item);
+          }}>
             <MaterialIcons
               name={item.completed ? "check-circle" : "radio-button-unchecked"}
               size={24}
               color={item.completed ? currentThemeColors.success : currentThemeColors.primary}
             />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
+          <TouchableOpacity onPress={(e) => {
+            e.stopPropagation(); // Prevent triggering the parent onPress
+            handleDeleteTask(item.id);
+          }}>
             <MaterialIcons name="delete" size={24} color={currentThemeColors.primary} />
           </TouchableOpacity>
         </View>
@@ -622,7 +630,7 @@ const HomeScreen = () => {
           </Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderAnalytics = () => {

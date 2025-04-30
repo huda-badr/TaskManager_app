@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 interface TaskFiltersProps {
   onSearch: (query: string) => void;
-  onSort: (key: 'priority' | 'category' | 'deadline') => void;
+  onSort: (key: 'priority' | 'deadline') => void;
   onFilter: (status: 'all' | 'pending' | 'in_progress' | 'completed') => void;
   isDark: boolean;
   currentThemeColors?: any; // Add theme colors prop
@@ -103,29 +103,7 @@ const TaskFilters: React.FC<TaskFiltersProps> = ({
             </Text>
           </TouchableOpacity>
           
-          {/* <TouchableOpacity 
-            style={[
-              styles.filterButton, 
-              { 
-                backgroundColor: activeSort === 'category' 
-                  ? themePrimary
-                  : sortButtonBgColor
-              }
-            ]} 
-            onPress={() => handleSort('category')}
-          >
-            <MaterialIcons 
-              name="category" 
-              size={18} 
-              color={activeSort === 'category' ? '#fff' : themeSecondary}
-            />
-            <Text style={[
-              styles.filterButtonText,
-              { color: activeSort === 'category' ? '#fff' : themeSecondary }
-            ]}>
-              Category
-            </Text>
-          </TouchableOpacity> */}
+          
           
           <TouchableOpacity 
             style={[

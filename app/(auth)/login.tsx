@@ -5,6 +5,8 @@ import { auth, db } from "@/config/firebase";
 import { router } from "expo-router";
 import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 import { useTheme } from "../context/ThemeContext";
+import { AchievementManager } from '@/app/services/AchievementManager';
+import { getDatabase, ref, get } from 'firebase/database';
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -26,12 +28,12 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const userId = userCredential.user.uid;
       
-      // Check if user document exists
+      // Check if user document exists in Firestore
       const userDocRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists()) {
-        // Create new user document
+        // Create new user document in Firestore
         await setDoc(userDocRef, {
           email: email,
           createdAt: Timestamp.now(),
@@ -48,6 +50,17 @@ export default function Login() {
             soundEffects: true
           }
         });
+      }
+
+      // Check if user has achievements in Realtime Database
+      const rtdb = getDatabase();
+      const userRtdbRef = ref(rtdb, `users/${userId}`);
+      const rtdbSnapshot = await get(userRtdbRef);
+      
+      // If no realtime data exists, initialize achievements
+      if (!rtdbSnapshot.exists()) {
+        console.log("Initializing achievements for existing user...");
+        await AchievementManager.initializeAllAchievementsForUser(userId);
       }
       
       // Navigate to home screen

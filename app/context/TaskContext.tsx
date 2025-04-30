@@ -14,7 +14,7 @@ interface TaskContextType {
   refreshTasks: () => Promise<void>;
   setSearchQuery: (query: string) => void;
   setStatusFilter: (status: 'all' | 'pending' | 'in_progress' | 'completed') => void;
-  setSortKey: (key: 'deadline' | 'priority' | 'category') => void;
+  setSortKey: (key: 'deadline' | 'priority') => void;  // Removed 'category' option
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined);
@@ -37,11 +37,19 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all');
-  const [sortKey, setSortKey] = useState<'deadline' | 'priority' | 'category'>('deadline');
+  const [sortKey, setSortKey] = useState<'deadline' | 'priority'>('deadline');  // Removed 'category' option
 
   // Set up real-time listener for tasks
   useEffect(() => {
+    let unsubscribeTasks: (() => void) | undefined;
+    
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+      // Clean up previous listener if it exists
+      if (unsubscribeTasks) {
+        unsubscribeTasks();
+        unsubscribeTasks = undefined;
+      }
+      
       if (user) {
         setLoading(true);
         const userId = user.uid;
@@ -51,7 +59,7 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
         );
         
         // Create real-time listener
-        const unsubscribeTasks = onSnapshot(q, (querySnapshot) => {
+        unsubscribeTasks = onSnapshot(q, (querySnapshot) => {
           const fetchedTasks: Task[] = querySnapshot.docs.map(doc => {
             const data = doc.data();
             return {
@@ -80,15 +88,19 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
           console.error("Error setting up tasks listener:", error);
           setLoading(false);
         });
-        
-        return () => unsubscribeTasks();
       } else {
         setTasks([]);
         setLoading(false);
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      // Clean up all listeners when component unmounts
+      unsubscribeAuth();
+      if (unsubscribeTasks) {
+        unsubscribeTasks();
+      }
+    };
   }, []);
 
   // Ensure the status filter and sorting logic are properly applied
@@ -129,8 +141,6 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
           case 'priority':
             const priorityOrder = { high: 0, medium: 1, low: 2 };
             return priorityOrder[a.priority] - priorityOrder[b.priority];
-          case 'category':
-            return (a.category ?? '').localeCompare(b.category ?? '');
           default:
             return 0;
         }

@@ -1,6 +1,6 @@
 import { auth, db, rtdb } from '@/config/firebase';
 import { Achievement, Task } from '@/types';
-import { collection, query, where, getDocs, doc, getDoc, writeBatch, updateDoc, Timestamp, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, writeBatch, updateDoc, Timestamp, increment, setDoc } from 'firebase/firestore';
 import { ref, get, set, update, onValue } from 'firebase/database';
 import { Alert } from 'react-native';
 import { INITIAL_ACHIEVEMENTS } from '@/components/Achievements';
@@ -23,6 +23,7 @@ const initializeAllAchievementsForUser = async (userId: string): Promise<boolean
       return false;
     }
     
+    console.log(`Initializing achievements for user: ${userId}`);
     const now = new Date().toISOString();
     
     // Calculate next reset times
@@ -41,6 +42,50 @@ const initializeAllAchievementsForUser = async (userId: string): Promise<boolean
     nextMonth.setDate(1);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     const nextMonthStr = nextMonth.toISOString();
+    
+    // First, check if the user's Firestore document exists and read stats if available
+    let firestoreStats = {
+      totalTasks: 0,
+      completedTasks: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      points: 0
+    };
+    
+    try {
+      const userDocRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (userData.stats) {
+          // Use existing stats from Firestore if available
+          firestoreStats = userData.stats;
+          console.log(`Read existing stats from Firestore: ${JSON.stringify(firestoreStats)}`);
+        } else {
+          // Create stats in Firestore if not exist
+          await updateDoc(userDocRef, {
+            stats: firestoreStats
+          });
+          console.log(`Created default stats in Firestore for user ${userId}`);
+        }
+      } else {
+        // If user doc doesn't exist at all, create it (backup for edge cases)
+        await setDoc(userDocRef, {
+          createdAt: Timestamp.now(),
+          stats: firestoreStats,
+          settings: {
+            theme: 'light',
+            notifications: true,
+            soundEffects: true
+          }
+        });
+        console.log(`Created new user document in Firestore for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('Error accessing Firestore stats:', error);
+      // Continue execution to ensure at least the RTDB stats are initialized
+    }
     
     // Initialize directly in the database with all proper attributes
     const achievements: Record<string, Achievement> = {};
@@ -81,24 +126,35 @@ const initializeAllAchievementsForUser = async (userId: string): Promise<boolean
       }
     });
     
-    // Initialize stats
+    // Initialize stats in RTDB, using values from Firestore when available
     const stats = {
-      points: 0,
-      completedTasks: 0,
+      // Use Firestore values or defaults
+      points: firestoreStats.points || 0,
+      completedTasks: firestoreStats.completedTasks || 0,
+      totalTasks: firestoreStats.totalTasks || 0,
       tasksCompletedToday: 0,
-      currentStreak: 0,
-      longestStreak: 0,
+      currentStreak: firestoreStats.currentStreak || 0,
+      longestStreak: firestoreStats.longestStreak || 0,
       leagueLevel: 'Bronze',
       lastActive: now,
       lastActiveDate: now,
-      completedGoals: 0
+      completedGoals: 0,
+      taskCounts: {}
     };
     
-    // Write the data to the database
+    // Calculate league level based on points
+    for (let i = LEAGUE_TIERS.length - 1; i >= 0; i--) {
+      if (stats.points >= LEAGUE_TIERS[i].threshold) {
+        stats.leagueLevel = LEAGUE_TIERS[i].name;
+        break;
+      }
+    }
+    
+    // Write the data to the realtime database
     await set(ref(rtdb, `users/${userId}/achievements`), achievements);
     await set(ref(rtdb, `users/${userId}/stats`), stats);
     
-    console.log(`Initialized ${Object.keys(achievements).length} achievements for user ${userId}`);
+    console.log(`Initialized ${Object.keys(achievements).length} achievements and stats for user ${userId}`);
     return true;
   } catch (error: unknown) {
     console.error('Error initializing achievements:', error instanceof Error ? error.message : String(error));
@@ -327,14 +383,7 @@ export const AchievementManager = {
       }
       updates[`users/${userId}/stats/leagueLevel`] = newLeague;
       
-      // Check for league change and notify user
-      const currentLeague = currentStats.leagueLevel || "Bronze";
-      if (newLeague !== currentLeague) {
-        Alert.alert('Level Up!', `Congratulations! You've reached ${newLeague} league!`);
-      }
-      
-      // Update all applicable achievements based on current metrics
-      
+      // Update achievement progress
       // 1. Task Starter - First task completed
       if (achievements.task_starter && !achievements.task_starter.completed) {
         const newProgress = completedTasks > 0 ? 1 : 0;
@@ -529,10 +578,9 @@ export const AchievementManager = {
     }
   },
   
-  // Add a function to track task completion with Realtime Database
   trackTaskCompletionRealtime: async (task: Task): Promise<boolean> => {
     try {
-      console.log("trackTaskCompletionRealtime called with task:", {
+      console.log("🔍 [Achievement Tracking] Starting trackTaskCompletionRealtime with task:", {
         id: task.id,
         title: task.title,
         completed: task.completed,
@@ -541,54 +589,63 @@ export const AchievementManager = {
       });
       
       if (!task.completed) {
-        console.log("Task is not marked as completed, skipping achievement tracking");
+        console.log("❌ [Achievement Tracking] Task is not marked as completed, skipping achievement tracking");
         return false;
       }
       
       const userId = auth.currentUser?.uid;
       if (!userId) {
-        console.log("No user ID found, skipping achievement tracking");
+        console.log("❌ [Achievement Tracking] No user ID found, skipping achievement tracking");
         return false;
       }
       
-      console.log(`Tracking task completion for user ${userId}`);
+      console.log(`✅ [Achievement Tracking] User authenticated: ${userId}`);
       
       const now = new Date();
       const today = now.toDateString();
       
       // Get current user stats
+      console.log(`🔍 [Achievement Tracking] Fetching current user stats from path: users/${userId}/stats`);
       const userStatsRef = ref(rtdb, `users/${userId}/stats`);
       const statsSnapshot = await get(userStatsRef);
+      
+      if (!statsSnapshot.exists()) {
+        console.log("⚠️ [Achievement Tracking] No stats found for user, will initialize default values");
+      } else {
+        console.log("✅ [Achievement Tracking] User stats found:", statsSnapshot.val());
+      }
+      
       const currentStats = statsSnapshot.exists() ? statsSnapshot.val() : {};
       
-      console.log("Current user stats:", {
-        completedTasks: currentStats.completedTasks || 0,
-        tasksCompletedToday: currentStats.tasksCompletedToday || 0,
-        currentStreak: currentStats.currentStreak || 0,
-        points: currentStats.points || 0
-      });
-      
       // Get current achievements
+      console.log(`🔍 [Achievement Tracking] Fetching current achievements from path: users/${userId}/achievements`);
       const achievementsRef = ref(rtdb, `users/${userId}/achievements`);
       const achievementsSnapshot = await get(achievementsRef);
+      
+      if (!achievementsSnapshot.exists()) {
+        console.log("⚠️ [Achievement Tracking] No achievements found, need to initialize");
+      } else {
+        console.log(`✅ [Achievement Tracking] Found ${Object.keys(achievementsSnapshot.val()).length} achievements`);
+      }
+      
       let achievements = achievementsSnapshot.exists() ? achievementsSnapshot.val() : {};
       
       // Check if we need to initialize all achievements
       if (!achievements || Object.keys(achievements).length <= 1) {
-        console.log("Missing achievements, initializing all achievements...");
+        console.log("🔄 [Achievement Tracking] Missing achievements, initializing all achievements...");
         await initializeAllAchievementsForUser(userId);
         
         // Get the newly initialized achievements
         const newAchievementsSnapshot = await get(achievementsRef);
         if (newAchievementsSnapshot.exists()) {
           achievements = newAchievementsSnapshot.val();
-          console.log(`Initialized ${Object.keys(achievements).length} achievements`);
+          console.log(`✅ [Achievement Tracking] Initialized ${Object.keys(achievements).length} achievements`);
         } else {
-          console.error("Failed to initialize achievements");
+          console.error("❌ [Achievement Tracking] Failed to initialize achievements");
           return false;
         }
       } else {
-        console.log(`Found ${Object.keys(achievements).length} existing achievements`);
+        console.log(`✅ [Achievement Tracking] Found ${Object.keys(achievements).length} existing achievements`);
       }
       
       // Prepare the updates object
@@ -600,10 +657,11 @@ export const AchievementManager = {
       const lastActiveDate = currentStats.lastActiveDate ? new Date(currentStats.lastActiveDate).toDateString() : null;
       const newTasksCompletedToday = lastActiveDate !== today ? 1 : tasksCompletedToday + 1;
       
-      console.log("Calculated task statistics:", {
+      console.log(`🔍 [Achievement Tracking] Calculated stats:`, {
         completedTasks,
         tasksCompletedToday: newTasksCompletedToday,
-        lastActiveDate
+        lastActiveDate,
+        today
       });
       
       // Update basic stats
@@ -624,22 +682,24 @@ export const AchievementManager = {
         if (lastActiveDate === yesterday.toDateString()) {
           // Continuing the streak
           currentStreak += 1;
-          console.log(`Continuing streak: ${currentStreak}`);
+          console.log(`✅ [Achievement Tracking] Continuing streak, new value: ${currentStreak}`);
         } else if (lastActiveDate !== today) {
           // Not yesterday and not today, reset streak
           currentStreak = 1;
-          console.log(`Resetting streak, new value: ${currentStreak}`);
+          console.log(`🔄 [Achievement Tracking] Resetting streak to 1 (last active: ${lastActiveDate})`);
+        } else {
+          console.log(`ℹ️ [Achievement Tracking] Already active today, streak remains: ${currentStreak}`);
         }
       } else {
         // First activity, start streak at 1
         currentStreak = 1;
-        console.log(`First activity, setting streak to: ${currentStreak}`);
+        console.log(`✅ [Achievement Tracking] First activity, starting streak at 1`);
       }
       
       // Update longest streak if needed
       if (currentStreak > longestStreak) {
         longestStreak = currentStreak;
-        console.log(`New longest streak: ${longestStreak}`);
+        console.log(`🏆 [Achievement Tracking] New longest streak: ${longestStreak}`);
       }
       
       updates[`users/${userId}/stats/currentStreak`] = currentStreak;
@@ -662,16 +722,25 @@ export const AchievementManager = {
       const taskCounts = currentStats.taskCounts || {};
       if (task.category) {
         taskCounts[task.category] = (taskCounts[task.category] || 0) + 1;
-        console.log(`Updated count for category ${task.category}: ${taskCounts[task.category]}`);
+        console.log(`✅ [Achievement Tracking] Updated count for category ${task.category}: ${taskCounts[task.category]}`);
       }
+      
+      // Count high priority tasks
+      const highPriorityCompleted = task.priority === 'high' 
+        ? (taskCounts.highPriority || 0) + 1 
+        : (taskCounts.highPriority || 0);
+      
       if (task.priority === 'high') {
-        taskCounts.highPriority = (taskCounts.highPriority || 0) + 1;
-        console.log(`Updated count for high priority tasks: ${taskCounts.highPriority}`);
+        taskCounts.highPriority = highPriorityCompleted;
+        console.log(`✅ [Achievement Tracking] Updated count for high priority tasks: ${highPriorityCompleted}`);
       }
+      
       updates[`users/${userId}/stats/taskCounts`] = taskCounts;
       
-      // Process achievement updates
-      console.log("Processing achievement updates based on task completion...");
+      // Calculate categories completed
+      // For the task_diversifier achievement
+      const categoriesCompleted = Object.keys(taskCounts).filter(key => key !== 'highPriority').length;
+      console.log(`ℹ️ [Achievement Tracking] Categories completed: ${categoriesCompleted}`);
       
       // Check and update achievements based on stats
       const achievementsToUpdate = [
@@ -713,14 +782,14 @@ export const AchievementManager = {
         },
         {
           id: 'urgency_pro',
-          condition: taskCounts.highPriority >= 5,
-          progress: taskCounts.highPriority || 0,
+          condition: highPriorityCompleted >= 5,
+          progress: highPriorityCompleted,
           total: 5
         },
         {
           id: 'task_diversifier',
-          condition: Object.keys(taskCounts).length >= 5,
-          progress: Object.keys(taskCounts).length,
+          condition: categoriesCompleted >= 5,
+          progress: categoriesCompleted,
           total: 5
         },
         {
@@ -738,15 +807,15 @@ export const AchievementManager = {
         // Only process achievements that are not completed and not claimed
         if (achievements[id] && !achievements[id].completed && !achievements[id].claimed) {
           // Update progress
+          console.log(`🔄 [Achievement Tracking] Updating "${id}" progress: ${progress}/${total}`);
           updates[`users/${userId}/achievements/${id}/progress`] = progress;
-          console.log(`Updating achievement ${id} progress to ${progress}/${total}`);
           
           // Check if achievement is completed
           if (condition) {
-            // Mark as completed but NOT automatically claimed
+            // Mark as completed but do not automatically claim
+            console.log(`🏆 [Achievement Tracking] Achievement "${id}" completed!`);
             updates[`users/${userId}/achievements/${id}/completed`] = true;
             updates[`users/${userId}/achievements/${id}/updatedAt`] = now.toISOString();
-            console.log(`Achievement ${id} is now completed!`);
             
             // Track completed achievement for notification only
             newlyCompletedAchievements.push({
@@ -754,20 +823,35 @@ export const AchievementManager = {
               points: achievements[id].points
             });
           }
-        } else {
-          console.log(`Skipping achievement ${id} - already completed: ${achievements[id]?.completed}, claimed: ${achievements[id]?.claimed}`);
         }
       });
       
-      // Show a summary of achievement updates
-      console.log(`Updating ${Object.keys(updates).length} values in the database`);
-      if (newlyCompletedAchievements.length > 0) {
-        console.log(`Completed ${newlyCompletedAchievements.length} new achievements`);
-      }
+      console.log(`📝 [Achievement Tracking] Prepared ${Object.keys(updates).length} updates to write`);
       
       // Apply all updates in one batch
-      await update(ref(rtdb), updates);
-      console.log("All updates applied successfully");
+      try {
+        console.log(`💾 [Achievement Tracking] Writing updates to database...`);
+        await update(ref(rtdb), updates);
+        console.log(`✅ [Achievement Tracking] Successfully wrote updates to database`);
+        
+        // Verify updates were applied
+        console.log(`🔍 [Achievement Tracking] Verifying updates were applied...`);
+        const verifyStatsRef = ref(rtdb, `users/${userId}/stats`);
+        const verifyStatsSnapshot = await get(verifyStatsRef);
+        if (verifyStatsSnapshot.exists()) {
+          const verifiedStats = verifyStatsSnapshot.val();
+          console.log(`✅ [Achievement Tracking] Verified stats:`, {
+            completedTasks: verifiedStats.completedTasks,
+            tasksCompletedToday: verifiedStats.tasksCompletedToday,
+            streak: verifiedStats.currentStreak
+          });
+        } else {
+          console.error(`❌ [Achievement Tracking] Failed to verify stats - no data found!`);
+        }
+      } catch (updateError) {
+        console.error(`❌ [Achievement Tracking] Error writing updates:`, updateError);
+        return false;
+      }
       
       // Show notifications for completed achievements
       if (newlyCompletedAchievements.length === 1) {
@@ -788,10 +872,10 @@ export const AchievementManager = {
         Alert.alert('Level Up!', `Congratulations! You've reached ${newLeague} league!`);
       }
       
-      console.log("Task completion tracking finished successfully");
+      console.log(`✅ [Achievement Tracking] Completed trackTaskCompletionRealtime successfully`);
       return true;
-    } catch (error: unknown) {
-      console.error('Error tracking task completion:', error instanceof Error ? error.message : String(error));
+    } catch (error) {
+      console.error('❌ [Achievement Tracking] Error updating achievements:', error);
       return false;
     }
   },
@@ -800,63 +884,108 @@ export const AchievementManager = {
   handleClaimRealtimeAchievement: async (achievementId: string): Promise<void> => {
     try {
       const userId = auth.currentUser?.uid;
-      if (!userId) return;
-      
-      console.log(`Claiming achievement ${achievementId} for user ${userId}`);
-      
-      // Create a transaction reference
-      const userRef = ref(rtdb, `users/${userId}`);
-      
-      // Always get fresh data directly from the database to prevent race conditions
-      const userSnapshot = await get(userRef);
-      
-      if (!userSnapshot.exists()) {
-        console.error('User data not found');
+      if (!userId) {
+        console.log('[CLAIM] No authenticated user found when claiming achievement');
+        Alert.alert('Sign In Required', 'Please sign in to claim achievements.');
         return;
       }
       
-      const userData = userSnapshot.val();
-      const achievements = userData.achievements || {};
-      const stats = userData.stats || {};
+      console.log(`[CLAIM] Starting claim process for achievement ${achievementId} by user ${userId}`);
       
-      // Check if achievement exists and can be claimed
-      if (!achievements[achievementId]) {
-        console.error(`Achievement with id ${achievementId} not found`);
+      // Get the achievement reference to check if it's claimable
+      const achievementRef = ref(rtdb, `users/${userId}/achievements/${achievementId}`);
+      const achievementSnapshot = await get(achievementRef);
+      
+      if (!achievementSnapshot.exists()) {
+        console.error(`[CLAIM] Achievement ${achievementId} not found in database`);
+        
+        // For new users, try to initialize achievements first
+        console.log('[CLAIM] Attempting to initialize achievements for new user');
+        await initializeAllAchievementsForUser(userId);
+        
+        // Check again after initialization
+        const retrySnapshot = await get(achievementRef);
+        if (!retrySnapshot.exists()) {
+          Alert.alert('Error', 'Achievement not found. Please restart the app and try again.');
+          return;
+        }
+        
+        // Use the newly initialized achievement
+        const achievement = retrySnapshot.val();
+        console.log('[CLAIM] Achievement initialized and found:', achievement);
+        
+        // If it's not completed yet, we can't claim it
+        if (!achievement.completed) {
+          Alert.alert('Not Completed', 'You need to complete this achievement before claiming it.');
+          return;
+        }
+      }
+      
+      // Get the achievement data
+      const achievement = achievementSnapshot.exists() ? 
+        achievementSnapshot.val() : 
+        (await get(achievementRef)).val();
+        
+      console.log('[CLAIM] Achievement data:', achievement);
+      
+      // Check if it can be claimed
+      if (!achievement.completed) {
+        console.log(`[CLAIM] Achievement ${achievementId} is not completed yet`);
+        Alert.alert('Not Completed', 'You need to complete this achievement before claiming it.');
         return;
       }
       
-      const achievement = achievements[achievementId];
-      
-      // Skip if already claimed to prevent duplicate points
-      if (!achievement.completed || achievement.claimed) {
-        console.log(`Achievement ${achievementId} cannot be claimed - either not completed or already claimed`);
-        console.log('Achievement state:', achievement);
+      if (achievement.claimed) {
+        console.log(`[CLAIM] Achievement ${achievementId} is already claimed`);
+        Alert.alert('Already Claimed', 'You have already claimed this achievement.');
         return;
       }
       
-      // Debug current points
-      console.log(`Current points before claiming: ${stats.points}`);
+      // Get or initialize stats for the user
+      const statsRef = ref(rtdb, `users/${userId}/stats`);
+      const statsSnapshot = await get(statsRef);
       
-      // Prepare the updates
-      const updates: {[key: string]: any} = {};
+      // Use default stats if not found
+      let stats = {
+        points: 0,
+        completedTasks: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        leagueLevel: 'Bronze',
+        lastActive: new Date().toISOString(),
+        lastActiveDate: new Date().toISOString()
+      };
       
-      // Mark achievement as claimed, but don't modify other properties
+      // If stats exist, use them
+      if (statsSnapshot.exists()) {
+        stats = statsSnapshot.val();
+      } else {
+        // Initialize stats if they don't exist
+        console.log('[CLAIM] Stats node does not exist. Creating it now.');
+        await set(statsRef, stats);
+      }
+      
+      console.log('[CLAIM] Current stats before update:', stats);
+      
+      // Calculate points
+      const pointsToAward = achievement.points || 0;
+      const currentPoints = stats.points || 0; // Ensure this isn't undefined
+      const newTotalPoints = currentPoints + pointsToAward;
+      
+      console.log(`[CLAIM] Points calculation: ${currentPoints} + ${pointsToAward} = ${newTotalPoints}`);
+      
+      // Atomic transaction to update both achievement status and user points
+      const updates: { [key: string]: any } = {};
+      
+      // Mark achievement as claimed and permanently unclaimable
       updates[`users/${userId}/achievements/${achievementId}/claimed`] = true;
       updates[`users/${userId}/achievements/${achievementId}/updatedAt`] = new Date().toISOString();
       
-      // Only add points if not already claimed - use database values for points
-      const pointsToAward = achievement.points || 0;
-      const currentPoints = stats.points || 0;
-      
-      // Explicitly calculate new total
-      const newTotalPoints = currentPoints + pointsToAward;
-      
-      console.log(`Adding ${pointsToAward} points. Current: ${currentPoints}, New total: ${newTotalPoints}`);
-      
-      // Update the points with the calculated value from database
+      // Update points in stats - directly setting the correct value
       updates[`users/${userId}/stats/points`] = newTotalPoints;
+      updates[`users/${userId}/stats/lastUpdated`] = new Date().toISOString();
       
-      // Calculate and update league based on points from database
+      // Calculate and update league based on new total points
       let newLeague = "Bronze";
       for (let i = LEAGUE_TIERS.length - 1; i >= 0; i--) {
         if (newTotalPoints >= LEAGUE_TIERS[i].threshold) {
@@ -866,23 +995,54 @@ export const AchievementManager = {
       }
       updates[`users/${userId}/stats/leagueLevel`] = newLeague;
       
-      // Apply all updates in one batch
+      // Apply all updates in one atomic operation
+      console.log('[CLAIM] Writing all updates to database in one transaction');
       await update(ref(rtdb), updates);
       
-      console.log(`Achievement ${achievementId} claimed successfully. Points awarded: ${pointsToAward}, New total: ${newTotalPoints}`);
+      // Verify the achievement was marked as claimed
+      const verifyAchievementSnapshot = await get(achievementRef);
+      if (verifyAchievementSnapshot.exists()) {
+        console.log('[CLAIM] Verify achievement claimed status:', verifyAchievementSnapshot.val().claimed);
+        if (!verifyAchievementSnapshot.val().claimed) {
+          console.error('[CLAIM] Failed to mark achievement as claimed');
+          throw new Error('Failed to mark achievement as claimed');
+        }
+      }
       
-      // Show claim notification
+      // Verify points were updated
+      const verifyPointsSnapshot = await get(statsRef);
+      if (verifyPointsSnapshot.exists()) {
+        console.log('[CLAIM] Verify updated points:', verifyPointsSnapshot.val().points);
+        if (verifyPointsSnapshot.val().points !== newTotalPoints) {
+          console.error('[CLAIM] Points were not updated correctly');
+          throw new Error('Points were not updated correctly');
+        }
+      } else {
+        console.error('[CLAIM] Stats node missing after update attempt');
+        throw new Error('Stats node missing after update');
+      }
+      
+      console.log(`[CLAIM] Achievement claim operation completed for ${achievementId}`);
+      
+      // Show notification to user with point information
       Alert.alert(
         'Achievement Claimed!', 
-        `You've claimed the achievement and earned ${pointsToAward} points!`
+        `You've claimed the achievement and earned ${pointsToAward} points! Your total is now ${newTotalPoints} points.`
       );
       
       // Show league up notification if changed
       if (newLeague !== stats.leagueLevel) {
         Alert.alert('Level Up!', `Congratulations! You've reached ${newLeague} league!`);
       }
-    } catch (error: unknown) {
-      console.error('Error claiming achievement:', error instanceof Error ? error.message : String(error));
+      
+      // Trigger auto-backup after claiming an achievement
+      AchievementManager.autoBackupAchievements().catch(error => 
+        console.error('[CLAIM] Auto-backup error:', error)
+      );
+      
+    } catch (error) {
+      console.error('[CLAIM] Error claiming achievement:', error);
+      Alert.alert('Error', 'There was a problem claiming your achievement. Please try again.');
     }
   },
   
@@ -1017,6 +1177,225 @@ export const AchievementManager = {
       console.log('setupRealtimeListener: Unsubscribing...');
       unsubscribe();
     };
+  },
+
+  // Backup user achievement data to a separate location in RTDB
+  backupAchievementData: async (): Promise<boolean> => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        console.log('backupAchievementData: No user logged in');
+        return false;
+      }
+      
+      console.log('backupAchievementData: Starting backup process');
+      
+      // Get current user data from RTDB
+      const userRef = ref(rtdb, `users/${userId}`);
+      const snapshot = await get(userRef);
+      
+      if (!snapshot.exists()) {
+        console.log('backupAchievementData: No user data found to backup');
+        return false;
+      }
+      
+      const userData = snapshot.val();
+      const backupData = {
+        achievements: userData.achievements || {},
+        stats: userData.stats || {},
+        backupDate: new Date().toISOString()
+      };
+      
+      // Write to backups location with timestamp
+      const backupRef = ref(rtdb, `backups/${userId}/achievements`);
+      await set(backupRef, backupData);
+      
+      console.log('backupAchievementData: Backup completed successfully');
+      return true;
+    } catch (error) {
+      console.error('Error backing up achievement data:', error);
+      return false;
+    }
+  },
+  
+  // Restore user achievement data from backup
+  restoreAchievementData: async (): Promise<boolean> => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        console.log('restoreAchievementData: No user logged in');
+        return false;
+      }
+      
+      console.log('restoreAchievementData: Starting restore process');
+      
+      // Get backup data
+      const backupRef = ref(rtdb, `backups/${userId}/achievements`);
+      const backupSnapshot = await get(backupRef);
+      
+      if (!backupSnapshot.exists()) {
+        console.log('restoreAchievementData: No backup data found');
+        return false;
+      }
+      
+      const backupData = backupSnapshot.val();
+      
+      // Restore achievements and stats
+      const userRef = ref(rtdb, `users/${userId}`);
+      await update(userRef, {
+        achievements: backupData.achievements,
+        stats: backupData.stats
+      });
+      
+      // Also update Firestore stats for consistency
+      try {
+        const userDocRef = doc(db, 'users', userId);
+        await updateDoc(userDocRef, {
+          'stats.points': backupData.stats.points || 0,
+          'stats.completedTasks': backupData.stats.completedTasks || 0,
+          'stats.currentStreak': backupData.stats.currentStreak || 0,
+          'stats.longestStreak': backupData.stats.longestStreak || 0,
+          'stats.lastUpdated': new Date()
+        });
+      } catch (firestoreError) {
+        console.error('Warning: Could not update Firestore during restore:', firestoreError);
+        // Continue execution as RTDB is the primary source for achievements
+      }
+      
+      console.log('restoreAchievementData: Restore completed successfully');
+      return true;
+    } catch (error) {
+      console.error('Error restoring achievement data:', error);
+      return false;
+    }
+  },
+  
+  // Auto-backup achievements after significant events
+  autoBackupAchievements: async (): Promise<void> => {
+    try {
+      // Check if we should perform a backup (e.g. not too soon after previous backup)
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+      
+      const lastBackupRef = ref(rtdb, `backups/${userId}/achievements/backupDate`);
+      const lastBackupSnapshot = await get(lastBackupRef);
+      
+      const now = new Date();
+      let shouldBackup = true;
+      
+      if (lastBackupSnapshot.exists()) {
+        const lastBackupDate = new Date(lastBackupSnapshot.val());
+        // Only backup if last backup was more than 1 hour ago
+        const hoursSinceLastBackup = (now.getTime() - lastBackupDate.getTime()) / (1000 * 60 * 60);
+        shouldBackup = hoursSinceLastBackup >= 1;
+      }
+      
+      if (shouldBackup) {
+        await AchievementManager.backupAchievementData();
+      }
+    } catch (error) {
+      console.error('Error in auto-backup:', error);
+    }
+  },
+
+  // Perform periodic syncs of achievement data between RTDB and Firestore
+  syncAchievementStats: async (): Promise<boolean> => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return false;
+      
+      // Get stats from RTDB (source of truth)
+      const statsRef = ref(rtdb, `users/${userId}/stats`);
+      const statsSnapshot = await get(statsRef);
+      
+      if (!statsSnapshot.exists()) return false;
+      const rtdbStats = statsSnapshot.val();
+      
+      // Update Firestore with the RTDB stats
+      const userDocRef = doc(db, 'users', userId);
+      await updateDoc(userDocRef, {
+        'stats.points': rtdbStats.points || 0,
+        'stats.completedTasks': rtdbStats.completedTasks || 0,
+        'stats.currentStreak': rtdbStats.currentStreak || 0,
+        'stats.longestStreak': rtdbStats.longestStreak || 0,
+        'stats.lastSynced': new Date()
+      });
+      
+      console.log('syncAchievementStats: Stats synchronized successfully');
+      return true;
+    } catch (error) {
+      console.error('Error syncing achievement stats:', error);
+      return false;
+    }
+  },
+
+  // Helper function to access the correct stats path
+  getUserStatsRef: (userId: string | null | undefined) => {
+    if (!userId) {
+      userId = auth.currentUser?.uid;
+      if (!userId) {
+        console.error('getUserStatsRef: No user ID available');
+        return null;
+      }
+    }
+    return ref(rtdb, `users/${userId}/stats`);
+  },
+
+  // Helper function to get user points
+  getUserPoints: async (userId?: string): Promise<number> => {
+    try {
+      const statsRef = AchievementManager.getUserStatsRef(userId);
+      if (!statsRef) return 0;
+      
+      const snapshot = await get(statsRef);
+      if (snapshot.exists()) {
+        return snapshot.val().points || 0;
+      }
+      return 0;
+    } catch (error) {
+      console.error('Error getting user points:', error);
+      return 0;
+    }
+  },
+  
+  // Update user points directly
+  updateUserPoints: async (pointsToAdd: number): Promise<boolean> => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return false;
+      
+      // Get current points
+      const statsRef = ref(rtdb, `users/${userId}/stats`);
+      const snapshot = await get(statsRef);
+      const currentPoints = snapshot.exists() ? (snapshot.val().points || 0) : 0;
+      
+      // Calculate new points
+      const newPoints = currentPoints + pointsToAdd;
+      
+      // Update points in RTDB
+      await update(statsRef, {
+        points: newPoints,
+        lastUpdated: new Date().toISOString()
+      });
+      
+      // Also update in Firestore
+      try {
+        const userDocRef = doc(db, 'users', userId);
+        await updateDoc(userDocRef, {
+          'stats.points': newPoints,
+          'stats.lastUpdated': new Date()
+        });
+      } catch (error) {
+        console.error('Failed to update Firestore points:', error);
+        // Continue execution as RTDB is the primary source
+      }
+      
+      console.log(`Updated points: ${currentPoints} + ${pointsToAdd} = ${newPoints}`);
+      return true;
+    } catch (error) {
+      console.error('Error updating user points:', error);
+      return false;
+    }
   }
 };
 

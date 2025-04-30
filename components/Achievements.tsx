@@ -352,18 +352,46 @@ export const Achievements: React.FC<AchievementsProps> = ({
   const userLevel = getAchievementLevel(userPoints);
 
   const handleClaimReward = async (achievementId: string) => {
-    // Check if the achievement is already claimed - if so, don't proceed
-    const achievement = achievements.find(a => a.id === achievementId);
-    if (achievement && achievement.claimed) {
-      Alert.alert(
-        "Already Claimed",
-        "You've already claimed this achievement reward!"
-      );
-      return;
-    }
-    
-    if (onClaimReward) {
-      onClaimReward(achievementId);
+    try {
+      // Check if the achievement is already claimed - if so, don't proceed
+      const achievement = achievements.find(a => a.id === achievementId);
+      if (!achievement) {
+        console.error(`[CLAIM] Achievement ${achievementId} not found in component state`);
+        Alert.alert("Error", "Achievement not found");
+        return;
+      }
+      
+      if (achievement.claimed) {
+        console.log(`[CLAIM] Achievement ${achievementId} is already claimed - preventing duplicate claim`);
+        Alert.alert(
+          "Already Claimed",
+          "You've already claimed this achievement reward!"
+        );
+        return;
+      }
+      
+      if (!achievement.completed) {
+        console.log(`[CLAIM] Achievement ${achievementId} is not completed yet - preventing claim`);
+        Alert.alert(
+          "Not Completed",
+          "You need to complete this achievement before claiming it."
+        );
+        return;
+      }
+
+      console.log(`[CLAIM] Attempting to claim achievement: ${achievementId}`);
+      
+      // Call the AchievementManager's function to handle the claim in the database
+      await AchievementManager.handleClaimRealtimeAchievement(achievementId);
+      
+      // If there's a parent callback, also call it (for screen refresh)
+      if (onClaimReward) {
+        console.log(`[CLAIM] Calling parent onClaimReward callback for achievement: ${achievementId}`);
+        onClaimReward(achievementId);
+      }
+    } catch (error) {
+      console.error('[CLAIM] Error in handleClaimReward:', error);
+      Alert.alert("Error", "There was a problem claiming your achievement. Please try again.");
     }
   };
 

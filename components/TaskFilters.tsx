@@ -4,19 +4,19 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 interface TaskFiltersProps {
   onSearch: (text: string) => void;
-  onSort: (key: 'deadline' | 'priority' | 'category') => void;
+  onSort: (key: 'deadline' | 'priority') => void;
   onFilter: (status: 'all' | 'pending' | 'in_progress' | 'completed') => void;
 }
 
 export default function TaskFilters({ onSearch, onSort, onFilter }: TaskFiltersProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'in_progress' | 'completed'>('all');
-  const [activeSortKey, setActiveSortKey] = useState<'deadline' | 'priority' | 'category'>('deadline');
+  const [activeSortKey, setActiveSortKey] = useState<'deadline' | 'priority'>('deadline');
 
   const handleSearch = (text: string) => {
     onSearch(text);
   };
 
-  const handleSort = (key: 'deadline' | 'priority' | 'category') => {
+  const handleSort = (key: 'deadline' | 'priority') => {
     setActiveSortKey(key);
     onSort(key);
   };
@@ -28,8 +28,7 @@ export default function TaskFilters({ onSearch, onSort, onFilter }: TaskFiltersP
 
   const sortOptions = [
     { key: 'deadline', icon: 'event', label: 'Deadline' },
-    { key: 'priority', icon: 'flag', label: 'Priority' },
-    { key: 'category', icon: 'category', label: 'Category' }
+    { key: 'priority', icon: 'flag', label: 'Priority' }
   ] as const;
 
   return (
@@ -184,4 +183,4 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
   },
-}); 
+});

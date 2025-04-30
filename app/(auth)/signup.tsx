@@ -1,14 +1,17 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity } from "react-native";
+import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from "react-native";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/config/firebase";
+import { auth, db } from "@/config/firebase";
 import { router } from "expo-router";
 import { useTheme } from "../context/ThemeContext";
+import { AchievementManager } from '@/app/services/AchievementManager';
+import { doc, setDoc, Timestamp } from "firebase/firestore";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { theme, currentThemeColors } = useTheme();
   const isDark = theme === 'dark';
 
@@ -18,11 +21,42 @@ export default function Signup() {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      // Create the user account
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userId = userCredential.user.uid;
+      
+      // Create user document in Firestore
+      const userDocRef = doc(db, 'users', userId);
+      await setDoc(userDocRef, {
+        email: email,
+        createdAt: Timestamp.now(),
+        stats: {
+          totalTasks: 0,
+          completedTasks: 0,
+          currentStreak: 0,
+          longestStreak: 0,
+          points: 0
+        },
+        settings: {
+          theme: 'light',
+          notifications: true,
+          soundEffects: true
+        }
+      });
+
+      // Initialize achievements in Realtime Database
+      await AchievementManager.initializeAllAchievementsForUser(userId);
+      
+      console.log("User created and achievements initialized successfully");
       router.replace("/(tabs)");
     } catch (error: any) {
+      console.error("Signup error:", error);
       Alert.alert("Error", error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -44,6 +78,7 @@ export default function Signup() {
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
+        editable={!isSubmitting}
       />
       <TextInput
         style={[
@@ -59,6 +94,7 @@ export default function Signup() {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        editable={!isSubmitting}
       />
       <TextInput
         style={[
@@ -74,6 +110,7 @@ export default function Signup() {
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
+        editable={!isSubmitting}
       />
       <TouchableOpacity 
         style={[
@@ -81,10 +118,15 @@ export default function Signup() {
           { backgroundColor: currentThemeColors.primary }
         ]} 
         onPress={handleSignUp}
+        disabled={isSubmitting}
       >
-        <Text style={[styles.signupButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Sign Up</Text>
+        {isSubmitting ? (
+          <ActivityIndicator color={isDark ? currentThemeColors.background : '#000000'} />
+        ) : (
+          <Text style={[styles.signupButtonText, { color: isDark ? currentThemeColors.background : '#000000' }]}>Sign Up</Text>
+        )}
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
+      <TouchableOpacity onPress={() => router.push("/(auth)/login")} disabled={isSubmitting}>
         <Text style={[styles.loginButtonText, { color: currentThemeColors.primary }]}>Already have an account? Login</Text>
       </TouchableOpacity>
     </View>

@@ -1,0 +1,48 @@
+{
+  "rules": {
+    "test": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "connection_test": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "users": {
+      "$uid": {
+        ".read": "$uid == auth.uid",
+        ".write": "$uid == auth.uid",
+        "achievements": {
+          ".read": "$uid == auth.uid",
+          ".write": "$uid == auth.uid",
+          "$achievementId": {
+            ".read": "$uid == auth.uid",
+            ".write": "$uid == auth.uid"
+          }
+        },
+        "stats": {
+          ".read": "$uid == auth.uid",
+          ".write": "$uid == auth.uid"
+        },
+        "settings": {
+          ".read": "$uid == auth.uid",
+          ".write": "$uid == auth.uid"
+        },
+        "connection_test": {
+          ".read": "$uid == auth.uid",
+          ".write": "$uid == auth.uid"
+        }
+      }
+    },
+    "backups": {
+      "$uid": {
+        ".read": "$uid == auth.uid",
+        ".write": "$uid == auth.uid",
+        "achievements": {
+          ".read": "$uid == auth.uid",
+          ".write": "$uid == auth.uid"
+        }
+      }
+    }
+  }
+}

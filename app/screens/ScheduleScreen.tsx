@@ -102,8 +102,8 @@ const ScheduleScreen = () => {
   const { theme, currentThemeColors } = useTheme();
   const isDark = theme === 'dark';
   
-  // Get tasks from TaskContext
-  const { tasks } = useTaskContext();
+  // Get tasks and updateTask function from TaskContext
+  const { tasks, updateTask } = useTaskContext();
   
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [markedDates, setMarkedDates] = useState<MarkedDates>({});
@@ -331,9 +331,38 @@ const ScheduleScreen = () => {
   };
   
   const handleTaskPress = (taskId: string) => {
-    // Navigate to task detail or edit screen
+    // Navigate to the create-task screen with the task ID as a parameter
+    router.push(`/create-task?taskId=${taskId}`);
   };
   
+  // Add function to handle toggling task completion status
+  const handleTaskComplete = async (task: Task) => {
+    try {
+      // Create a copy of the task with the updated completion status
+      const updatedTask = {
+        ...task,
+        completed: !task.completed,
+        completedAt: !task.completed ? new Date() : undefined,
+        status: !task.completed ? 'completed' as const : 'pending' as const
+      };
+      
+      // Update the task in the database
+      await updateTask(task.id, {
+        completed: updatedTask.completed,
+        completedAt: updatedTask.completedAt,
+        status: updatedTask.status
+      });
+      
+      // Success feedback
+      if (updatedTask.completed) {
+        Alert.alert('Task Completed', 'Task marked as completed successfully!');
+      }
+    } catch (error) {
+      console.error('Error updating task completion status:', error);
+      Alert.alert('Error', 'Failed to update task status');
+    }
+  };
+
   const renderTaskItem = ({ item }: { item: Task }) => {
     return (
       <TouchableOpacity 
@@ -375,11 +404,19 @@ const ScheduleScreen = () => {
               </View>
             )}
           </View>
-          <MaterialIcons
-            name={item.completed ? "check-circle" : "radio-button-unchecked"}
-            size={24}
-            color={item.completed ? currentThemeColors.success : currentThemeColors.text}
-          />
+          <TouchableOpacity 
+            onPress={(e) => {
+              e.stopPropagation(); // Prevent triggering the parent onPress
+              handleTaskComplete(item);
+            }}
+            style={styles.checkboxButton}
+          >
+            <MaterialIcons
+              name={item.completed ? "check-circle" : "radio-button-unchecked"}
+              size={24}
+              color={item.completed ? currentThemeColors.success : currentThemeColors.text}
+            />
+          </TouchableOpacity>
         </View>
         
         {item.description ? (
@@ -552,6 +589,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  checkboxButton: {
+    padding: 6,
   },
   sectionTitle: {
     fontSize: 18,

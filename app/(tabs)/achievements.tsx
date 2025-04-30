@@ -2,17 +2,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Text } from 'react-native';
 import { Achievements, Achievement } from '@/components/Achievements';
 import { AchievementManager } from '@/app/services/AchievementManager';
-import { auth } from '@/config/firebase';
+import { auth, rtdb, testRTDBConnection } from '@/config/firebase';
 import { router, useFocusEffect } from 'expo-router';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { Task } from '@/types';
+import { ref, set, get, update } from 'firebase/database';
 
 export default function AchievementsScreen() {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [userPoints, setUserPoints] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [backupInProgress, setBackupInProgress] = useState(false);
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
   const listenerUnsubscribe = useRef<(() => void) | null>(null);
   const initialLoadComplete = useRef(false);
 
@@ -118,23 +122,164 @@ export default function AchievementsScreen() {
     forceRefreshAchievements();
   };
 
+  const testRTDBPermissions = async () => {
+    setConnectionStatus('Testing connection...');
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        setConnectionStatus('Error: Not logged in');
+        return;
+      }
+      
+      // First test basic connection
+      const connectionResult = await testRTDBConnection();
+      
+      if (!connectionResult) {
+        setConnectionStatus('Failed to connect to database');
+        return;
+      }
+      
+      // Test user-specific permissions
+      try {
+        // Test stats write
+        const statsRef = ref(rtdb, `users/${userId}/stats`);
+        const statsSnapshot = await get(statsRef);
+        const currentStats = statsSnapshot.exists() ? statsSnapshot.val() : {};
+        const lastPoints = currentStats.points || 0;
+        
+        // Try writing points and then resetting them
+        await update(statsRef, { points: lastPoints + 1 });
+        
+        // Verify the write
+        const updatedStatsSnapshot = await get(statsRef);
+        
+        if (updatedStatsSnapshot.exists() && updatedStatsSnapshot.val().points === lastPoints + 1) {
+          // Reset the points
+          await update(statsRef, { points: lastPoints });
+          setConnectionStatus('✅ Success: Read/write permissions working');
+          
+          // Double check that reset worked
+          const finalStatsSnapshot = await get(statsRef);
+          if (finalStatsSnapshot.exists() && finalStatsSnapshot.val().points === lastPoints) {
+            console.log('Points successfully reset to original value');
+          } else {
+            console.warn('Points reset may have failed, check database');
+          }
+          
+        } else {
+          setConnectionStatus('❌ Error: Write appeared to succeed but verification failed');
+        }
+      } catch (error) {
+        console.error('Permission test error:', error);
+        setConnectionStatus(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Connection test error:', error);
+      setConnectionStatus(`❌ Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const handleClaimReward = async (achievementId: string) => {
     try {
+      console.log(`Attempting to claim achievement: ${achievementId}`);
+      
       const user = auth.currentUser;
       if (!user) {
+        console.log("No authenticated user found");
         router.replace("/(auth)/login");
         return;
       }
 
+      console.log(`User authenticated, proceeding to claim achievement for user: ${user.uid}`);
+      
+      // Find the achievement in current state to verify it's eligible for claiming
+      const achievementToClaim = achievements.find(a => a.id === achievementId);
+      if (!achievementToClaim) {
+        console.log(`Achievement ${achievementId} not found in current state`);
+        Alert.alert('Error', 'Achievement not found');
+        return;
+      }
+      
+      console.log(`Achievement eligibility check: completed=${achievementToClaim.completed}, claimed=${achievementToClaim.claimed}`);
+      
+      if (!achievementToClaim.completed) {
+        console.log(`Achievement ${achievementId} is not completed yet`);
+        Alert.alert('Error', 'This achievement is not completed yet');
+        return;
+      }
+      
+      if (achievementToClaim.claimed) {
+        console.log(`Achievement ${achievementId} is already claimed`);
+        Alert.alert('Already Claimed', 'You have already claimed this achievement');
+        return;
+      }
+
       // Call the AchievementManager's claim achievement function
-      // The real-time listener will update the UI automatically
+      console.log(`Calling AchievementManager.handleClaimRealtimeAchievement with id: ${achievementId}`);
       await AchievementManager.handleClaimRealtimeAchievement(achievementId);
+      console.log(`Claim function completed, points should be updated`);
       
     } catch (error) {
       console.error('Error claiming reward:', error);
       Alert.alert('Error', 'Failed to claim reward');
     }
   };
+
+  const handleBackupData = async () => {
+    setBackupInProgress(true);
+    try {
+      const success = await AchievementManager.backupAchievementData();
+      if (success) {
+        Alert.alert('Success', 'Achievement data has been backed up successfully');
+      } else {
+        Alert.alert('Error', 'Failed to backup achievement data');
+      }
+    } catch (error) {
+      console.error('Error in backup process:', error);
+      Alert.alert('Error', 'An unexpected error occurred during backup');
+    } finally {
+      setBackupInProgress(false);
+    }
+  };
+
+  const handleRestoreData = async () => {
+    Alert.alert(
+      'Restore Data',
+      'This will restore your achievement data from the most recent backup. Any current progress may be overwritten. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Restore', 
+          style: 'destructive',
+          onPress: async () => {
+            setRestoreInProgress(true);
+            try {
+              const success = await AchievementManager.restoreAchievementData();
+              if (success) {
+                Alert.alert('Success', 'Achievement data has been restored successfully');
+                // Refresh achievements after restore
+                setupRealtimeListener();
+              } else {
+                Alert.alert('Error', 'Failed to restore achievement data. No backup found.');
+              }
+            } catch (error) {
+              console.error('Error in restore process:', error);
+              Alert.alert('Error', 'An unexpected error occurred during restore');
+            } finally {
+              setRestoreInProgress(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Auto backup achievements on load
+  useEffect(() => {
+    if (initialLoadComplete.current && !loading) {
+      AchievementManager.autoBackupAchievements();
+    }
+  }, [loading]);
 
   if (loading) {
     return (
@@ -154,6 +299,13 @@ export default function AchievementsScreen() {
         refreshing={refreshing}
       />
       
+      {/* Connection Status */}
+      {connectionStatus && (
+        <View style={styles.statusContainer}>
+          <Text style={styles.statusText}>{connectionStatus}</Text>
+        </View>
+      )}
+      
       {/* Force Update Button */}
       <TouchableOpacity 
         style={styles.updateButton}
@@ -164,6 +316,39 @@ export default function AchievementsScreen() {
           {loading || refreshing ? "Updating..." : "Force Update Achievements"}
         </Text>
       </TouchableOpacity>
+      
+      {/* Test Database Connection Button */}
+      <TouchableOpacity 
+        style={styles.connectionTestButton}
+        onPress={testRTDBPermissions}
+        disabled={loading}
+      >
+        <Text style={styles.updateButtonText}>
+          Test Database Connection
+        </Text>
+      </TouchableOpacity>
+
+      {/* Backup and Restore Buttons */}
+      <View style={styles.backupRestoreContainer}>
+        <TouchableOpacity 
+          style={[styles.backupRestoreButton, { backgroundColor: backupInProgress ? '#ccc' : '#4CAF50' }]}
+          onPress={handleBackupData}
+          disabled={backupInProgress || loading || refreshing}
+        >
+          <Text style={styles.backupRestoreButtonText}>
+            {backupInProgress ? "Backing up..." : "Backup Data"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.backupRestoreButton, { backgroundColor: restoreInProgress ? '#ccc' : '#f44336' }]}
+          onPress={handleRestoreData}
+          disabled={restoreInProgress || loading || refreshing}
+        >
+          <Text style={styles.backupRestoreButtonText}>
+            {restoreInProgress ? "Restoring..." : "Restore Data"}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -191,4 +376,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-}); 
+  backupRestoreContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    margin: 10,
+  },
+  backupRestoreButton: {
+    padding: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  backupRestoreButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusContainer: {
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 5,
+    marginHorizontal: 10,
+    marginBottom: 10,
+  },
+  statusText: {
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  connectionTestButton: {
+    backgroundColor: '#ff9800',
+    padding: 15,
+    borderRadius: 5,
+    alignItems: 'center',
+    margin: 10,
+  },
+});
